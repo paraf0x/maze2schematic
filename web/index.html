@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>maze2schematic</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <h1>maze2schematic</h1>
+
+    <ul id="messages" aria-live="polite"></ul>
+
+    <section class="group">
+      <h2>Labyrinth</h2>
+      <label class="field">
+        <span>Spalten</span>
+        <input id="cols" type="number" min="2" max="500" value="20">
+      </label>
+      <label class="field">
+        <span>Zeilen</span>
+        <input id="rows" type="number" min="2" max="500" value="20">
+      </label>
+      <label class="field">
+        <span>Seed</span>
+        <input id="seed" type="number">
+      </label>
+    </section>
+
+    <section class="group">
+      <h2>Voreinstellung</h2>
+      <label class="field">
+        <span>Dungeon</span>
+        <select id="dungeon">
+          <option value="custom">benutzerdefiniert</option>
+          <option value="labyrinth">labyrinth</option>
+          <option value="catacombs">catacombs</option>
+          <option value="hedge">hedge</option>
+          <option value="palace">palace</option>
+          <option value="fortress">fortress</option>
+          <option value="suburb">suburb</option>
+          <option value="city">city</option>
+          <option value="pacman">pacman</option>
+          <option value="starship">starship</option>
+          <option value="garden">garden</option>
+          <option value="forbidden">forbidden</option>
+        </select>
+      </label>
+    </section>
+
+    <section class="group">
+      <h2>Parameter</h2>
+      <label class="field range">
+        <span>Geradheit</span>
+        <input id="straightness" type="range" min="0" max="1" step="0.01" value="0">
+      </label>
+      <label class="field range">
+        <span>Abkürzungen</span>
+        <input id="shortcuts" type="range" min="0" max="1" step="0.01" value="0">
+      </label>
+      <label class="field range">
+        <span>Abdeckung</span>
+        <input id="coverage" type="range" min="0" max="1" step="0.01" value="1">
+      </label>
+      <label class="field range">
+        <span>Räume</span>
+        <input id="rooms" type="range" min="0" max="1" step="0.01" value="0">
+      </label>
+    </section>
+
+    <section class="group">
+      <h2>Ränder &amp; Symmetrie</h2>
+      <label class="field checkbox"><input id="h-loop" type="checkbox"> Horizontal: Schleife</label>
+      <label class="field checkbox"><input id="v-loop" type="checkbox"> Vertikal: Schleife</label>
+      <label class="field checkbox"><input id="h-mirror" type="checkbox"> Horizontal: Spiegelung</label>
+      <label class="field checkbox"><input id="v-mirror" type="checkbox"> Vertikal: Spiegelung</label>
+      <label class="field checkbox"><input id="h-border" type="checkbox" checked> Horizontal: Rand</label>
+      <label class="field checkbox"><input id="v-border" type="checkbox" checked> Vertikal: Rand</label>
+      <label class="field checkbox"><input id="entrances" type="checkbox" checked> Ein-/Ausgang</label>
+    </section>
+
+    <section class="group">
+      <h2>Schematic</h2>
+      <label class="field">
+        <span>Name</span>
+        <input id="schematic-name" type="text" value="maze">
+      </label>
+      <label class="field">
+        <span>Autor</span>
+        <input id="author" type="text" value="maze2schematic-web">
+      </label>
+    </section>
+
+    <section class="group">
+      <h2>Tile-Set</h2>
+      <div id="tile-drop">Eigene <code>.litematic</code>-Tiles hier ablegen</div>
+      <ul id="tile-status"></ul>
+      <button id="tile-reset" type="button">Presets wiederherstellen</button>
+    </section>
+
+    <button id="download-btn" type="button" class="primary">.litematic herunterladen</button>
+  </aside>
+
+  <main id="preview">
+    <nav id="tabs">
+      <button id="tab-maze" type="button" class="tab active">Maze</button>
+      <button id="tab-topdown" type="button" class="tab">Top-Down</button>
+      <button id="tab-3d" type="button" class="tab">3D</button>
+    </nav>
+    <div id="preview-body">
+      <canvas id="maze-canvas"></canvas>
+      <canvas id="topdown-canvas"></canvas>
+      <div id="view-3d"></div>
+    </div>
+  </main>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
