@@ -2,9 +2,9 @@
 // Portierungs-Logik selbst, sondern ruft nur die Kern-Module (Tasks 1-8) und
 // die Preset-Assets (Task 9) auf.
 //
-// `preview2d.js`/`preview3d.js` existieren erst ab Task 11/12: bis dahin
-// dispatcht dieses Modul nur die Events "maze-changed"/"assembly-changed" auf
-// `document`, ohne selbst etwas zu zeichnen.
+// `preview3d.js` existiert erst ab Task 12: bis dahin dispatcht dieses Modul
+// das Event "assembly-changed" zwar weiterhin auf `document` (fuer Task 12),
+// zeichnet aber selbst nur die 2D-Vorschauen (Task 11, `preview2d.js`).
 //
 // main.js exportiert nichts. Alle DOM-Verdrahtung steckt in `init()`, das erst
 // bei DOMContentLoaded (bzw. sofort, falls das Dokument schon bereit ist)
@@ -19,6 +19,7 @@ import { parseVariantsConfig } from "./variants.js";
 import { assembleBlocks } from "./assemble.js";
 import { parseLitematic, writeLitematic } from "./litematic.js";
 import { gzip, gunzip, supportsCompression, downloadBlob } from "./export.js";
+import { drawMaze, drawTopdown } from "./preview2d.js";
 
 const ASSEMBLY_DEBOUNCE_MS = 250;
 
@@ -184,6 +185,20 @@ function init() {
   }
 
   // ---------------------------------------------------------------------
+  // 2D-Vorschauen (Task 11): Maze-Ansicht direkt bei jedem Maze, Top-Down
+  // gedebounct zusammen mit dem Assembly. Zusaetzlich beim Tab-Wechsel neu
+  // gezeichnet, da eine zuvor versteckte (`display: none`) Canvas beim
+  // vorherigen Event noch die Groesse 0 hatte.
+  // ---------------------------------------------------------------------
+
+  document.addEventListener("maze-changed", (ev) => {
+    drawMaze(els.mazeCanvas, ev.detail.maze);
+  });
+  document.addEventListener("assembly-changed", (ev) => {
+    drawTopdown(els.topdownCanvas, ev.detail.assembly);
+  });
+
+  // ---------------------------------------------------------------------
   // Parameter-Eingaben verdrahten
   // ---------------------------------------------------------------------
 
@@ -225,6 +240,13 @@ function init() {
     for (const key of Object.keys(tabPanels)) {
       tabPanels[key].style.display = key === which ? "" : "none";
       tabButtons[key].classList.toggle("active", key === which);
+    }
+    // Neu zeichnen: eine Canvas, die vorher "display: none" war, hatte beim
+    // letzten "maze-changed"/"assembly-changed"-Event clientWidth/Height 0.
+    if (which === "maze" && state.maze) {
+      drawMaze(els.mazeCanvas, state.maze);
+    } else if (which === "topdown" && state.assembly) {
+      drawTopdown(els.topdownCanvas, state.assembly);
     }
   }
   els.tabMaze.addEventListener("click", () => selectTab("maze"));
