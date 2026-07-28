@@ -75,6 +75,34 @@ test("parseVariantsConfig: echtes variants.json + Fehlerfaelle", () => {
   assert.deepEqual(parseVariantsConfig({ straight: 3 }).weights, { straight: 3 });
 });
 
+test("TileSet: gemischte Alias-Familien (tcross-Basis + tee_slim-Variante) bevorzugen die Basis", () => {
+  // Regression fuer Finding 2: "tcross.litematic" (Basis fuer den "tcross"-
+  // Alias von "tee") zusammen mit "tee_slim.litematic" (Style-Variante fuer
+  // den "tee"-Alias) durften vorher dazu fuehren, dass die zuerst gelistete
+  // "tee"-Alias-Familie gewaehlt wird (nur der Style-Treffer, keine Basis)
+  // und ein spuriser TileError ("tee: Basis-Variante fehlt") geworfen wird,
+  // obwohl "tcross.litematic" eine gueltige Basis-Variante ist.
+  const entries = presetEntries().filter((e) => !e.filename.startsWith("tcross"));
+  const tcrossDoc = loadDoc("presets/tcross/tcross.litematic");
+  entries.push({ filename: "tcross.litematic", doc: tcrossDoc });
+  entries.push({ filename: "tee_slim.litematic", doc: loadDoc("presets/tcross/tcross_slim.litematic") });
+
+  const ts = TileSet.fromEntries(entries, config());
+
+  // "tee" bekommt die tcross-Basis (Alias mit DEFAULT_STYLE-Treffer wird
+  // bevorzugt); "tee_slim" gehoert zur Alias-Familie "tee" und wird verworfen,
+  // da fuer "tee" bereits der Alias "tcross" (mit Basis-Treffer) gewaehlt wurde.
+  assert.deepEqual(Object.keys(ts.variants.tee), [DEFAULT_STYLE]);
+  const teeBase = ts.get("tee", 0, DEFAULT_STYLE);
+  const tcrossBase = tileFromParsed(tcrossDoc, "tcross");
+  assert.equal(teeBase.size, tcrossBase.size);
+  assert.equal(teeBase.height, tcrossBase.height);
+  for (let x = 0; x < teeBase.size; x++)
+    for (let y = 0; y < teeBase.height; y++)
+      for (let z = 0; z < teeBase.size; z++)
+        assert.equal(stateKey(teeBase.blocks[x][y][z]), stateKey(tcrossBase.blocks[x][y][z]));
+});
+
 test("TileSet: fehlendes optionales closed-Tile wird synthetisiert (voll, keine Luft)", () => {
   const entries = presetEntries().filter((e) => !e.filename.startsWith("closed"));
   const ts = TileSet.fromEntries(entries, config());

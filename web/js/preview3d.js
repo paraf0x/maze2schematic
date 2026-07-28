@@ -197,6 +197,7 @@ export function initScene(container) {
     active: false,
     rafId: null,
     pendingAssembly: undefined,
+    lastSize: null, // { x, y, z } der zuletzt angewendeten Assembly-Groesse
   };
 
   _resize();
@@ -262,12 +263,24 @@ function _applyAssembly(assembly) {
   state.scene.add(mesh);
   state.mesh = mesh;
 
-  const cx = assembly.sizeX / 2;
-  const cy = assembly.sizeY / 2;
-  const cz = assembly.sizeZ / 2;
-  state.controls.target.set(cx, cy, cz);
-  const maxDim = Math.max(assembly.sizeX, assembly.sizeY, assembly.sizeZ);
-  state.camera.position.set(cx + maxDim, cy + maxDim, cz + maxDim);
+  // Kamera/Controls-Target nur neu positionieren, wenn sich die Abmessungen
+  // seit dem letzten updateScene-Aufruf geaendert haben -- sonst wuerde jede
+  // kleine Parameter-Aenderung (z.B. ein Slider-Tupfer) die Sicht des
+  // Nutzers zuruecksetzen, obwohl sich die Groesse gar nicht geaendert hat.
+  const dimsChanged =
+    !state.lastSize ||
+    state.lastSize.x !== assembly.sizeX ||
+    state.lastSize.y !== assembly.sizeY ||
+    state.lastSize.z !== assembly.sizeZ;
+  if (dimsChanged) {
+    const cx = assembly.sizeX / 2;
+    const cy = assembly.sizeY / 2;
+    const cz = assembly.sizeZ / 2;
+    state.controls.target.set(cx, cy, cz);
+    const maxDim = Math.max(assembly.sizeX, assembly.sizeY, assembly.sizeZ);
+    state.camera.position.set(cx + maxDim, cy + maxDim, cz + maxDim);
+    state.lastSize = { x: assembly.sizeX, y: assembly.sizeY, z: assembly.sizeZ };
+  }
   state.controls.update();
 }
 

@@ -108,8 +108,8 @@ function init() {
   // ---------------------------------------------------------------------
 
   function optionsFromForm() {
-    const cols = clampInt(els.cols.value, 2, 500, 20);
-    const rows = clampInt(els.rows.value, 2, 500, 20);
+    const cols = clampInt(els.cols.value, 2, 200, 20);
+    const rows = clampInt(els.rows.value, 2, 200, 20);
     return {
       cols,
       rows,
@@ -132,8 +132,8 @@ function init() {
   }
 
   function applyPresetToForm(name) {
-    const cols = clampInt(els.cols.value, 2, 500, 20);
-    const rows = clampInt(els.rows.value, 2, 500, 20);
+    const cols = clampInt(els.cols.value, 2, 200, 20);
+    const rows = clampInt(els.rows.value, 2, 200, 20);
     const opts = presetOptions(name, cols, rows);
     els.straightness.value = String(opts.straightness);
     els.shortcuts.value = String(opts.shortcuts);
@@ -159,6 +159,14 @@ function init() {
 
   let assemblyTimer = null;
 
+  // Absichtliche Abweichung vom Python __main__.py: dort teilen sich Maze-
+  // Generierung und Assembly eine einzige Random-Instanz, hier bekommt jede
+  // Phase ihr eigenes frisches makeRng(seed). Grund: das Assembly laeuft
+  // gedebounced (scheduleAssembly) und muss bei jedem Trigger deterministisch
+  // aus dem aktuellen Seed neu aufgebaut werden koennen, ohne dass vorherige
+  // Aufrufe (z.B. die synchrone Maze-Generierung in render()) den RNG-Zustand
+  // "verbraucht" haben. Reproduzierbarkeit je Plattform bleibt erhalten, da
+  // jede Phase deterministisch vom selben Seed ausgeht.
   function scheduleAssembly() {
     if (assemblyTimer) {
       clearTimeout(assemblyTimer);
@@ -179,6 +187,8 @@ function init() {
   function render() {
     state.options = optionsFromForm();
     try {
+      // Eigenes makeRng(seed) statt geteilter Random-Instanz -- s. Kommentar
+      // bei scheduleAssembly() oben.
       state.maze = generateMaze(state.options, makeRng(seedValue()));
     } catch (err) {
       addMessage(`Labyrinth-Generierung fehlgeschlagen: ${err.message}`, "error");
@@ -241,7 +251,10 @@ function init() {
   const tabButtons = { maze: els.tabMaze, topdown: els.tabTopdown, "3d": els.tab3d };
   const tabPanels = { maze: els.mazeCanvas, topdown: els.topdownCanvas, "3d": els.view3d };
 
+  let currentTab = "maze";
+
   function selectTab(which) {
+    currentTab = which;
     for (const key of Object.keys(tabPanels)) {
       tabPanels[key].style.display = key === which ? "" : "none";
       tabButtons[key].classList.toggle("active", key === which);
@@ -266,7 +279,16 @@ function init() {
   els.tab3d.addEventListener("click", () => selectTab("3d"));
   selectTab("maze");
 
-  window.addEventListener("resize", () => handle3dResize());
+  window.addEventListener("resize", () => {
+    handle3dResize();
+    // Auch die aktuell sichtbare 2D-Canvas neu zeichnen -- deren Groesse
+    // haengt am Container und aendert sich mit dem Fenster.
+    if (currentTab === "maze" && state.maze) {
+      drawMaze(els.mazeCanvas, state.maze);
+    } else if (currentTab === "topdown" && state.assembly) {
+      drawTopdown(els.topdownCanvas, state.assembly);
+    }
+  });
 
   // ---------------------------------------------------------------------
   // Tile-Set-Status
@@ -314,8 +336,14 @@ function init() {
   els.tileDrop.addEventListener("drop", async (ev) => {
     ev.preventDefault();
     els.tileDrop.classList.remove("dragover");
-    const files = [...(ev.dataTransfer?.files ?? [])].filter((f) => /\.litematic$/i.test(f.name));
-    if (files.length === 0) return;
+    const droppedFiles = [...(ev.dataTransfer?.files ?? [])];
+    const files = droppedFiles.filter((f) => /\.litematic$/i.test(f.name));
+    if (files.length === 0) {
+      if (droppedFiles.length > 0) {
+        addMessage("Nur .litematic-Dateien werden unterstützt.", "warning");
+      }
+      return;
+    }
 
     const addedKeys = [];
     for (const file of files) {
@@ -347,7 +375,7 @@ function init() {
           for (const key of addedKeys) state.userFiles.delete(key);
           renderTileStatus();
         } else {
-          throw err;
+          addMessage(`Unerwarteter Fehler beim Laden der Tiles: ${err.message}`, "error");
         }
       }
     }

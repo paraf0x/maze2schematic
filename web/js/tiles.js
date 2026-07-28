@@ -128,13 +128,29 @@ export function styleOf(stem, alias) {
 // Sucht in der flachen Entry-Liste die Datei(en) fuer einen Tile-Typ; liefert
 // { alias, matches }. Ersetzt das Dateisystem-Layout von _find_tile_files:
 // im Web gibt es nur eine flache Liste von Dateien (Manifest oder Drag&Drop).
+//
+// Bevorzugt einen Alias, dessen Treffer eine DEFAULT_STYLE-Basis-Variante
+// enthalten (z.B. "tcross.litematic" fuer den Alias "tcross"). Nur wenn
+// KEIN Alias eine Basis-Variante liefert, wird auf den ersten Alias mit
+// irgendeinem Treffer zurueckgefallen. Ohne diese Praeferenz wuerden sich
+// gemischte Alias-Familien gegenseitig stoeren: z.B. wuerden die Dateien
+// "tcross.litematic" (Basis fuer "tcross") und "tee_slim.litematic"
+// (Style-Variante fuer "tee") sonst beide dem zuerst gelisteten Alias "tee"
+// zugeordnet -- die gueltige "tcross"-Basis wuerde ignoriert und es kaeme zu
+// einem verwirrenden TileError ("Basis-Variante fehlt"), obwohl eine Basis
+// vorhanden ist (nur unter einem anderen Alias).
 function findTileFiles(stemEntries, canonical) {
+  let fallback = null;
   for (const alias of ALIASES[canonical]) {
     const matches = stemEntries
       .filter(({ stem }) => stem === alias || stem.startsWith(alias + "_"))
       .sort((a, b) => a.stem.localeCompare(b.stem));
-    if (matches.length > 0) return { alias, matches };
+    if (matches.length === 0) continue;
+    const hasBase = matches.some(({ stem }) => styleOf(stem, alias) === DEFAULT_STYLE);
+    if (hasBase) return { alias, matches };
+    if (!fallback) fallback = { alias, matches };
   }
+  if (fallback) return fallback;
   return { alias: canonical, matches: [] };
 }
 
