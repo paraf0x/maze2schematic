@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { parseLitematic, stateKey } from "../js/litematic.js";
-import { TileSet, TileError, rotateStateCw, rotatedCw, tileFromParsed, styleOf, DEFAULT_STYLE } from "../js/tiles.js";
+import { TileSet, TileError, rotateStateCw, rotatedCw, tileFromParsed, styleOf, DEFAULT_STYLE, rotateDoc } from "../js/tiles.js";
 import { parseVariantsConfig } from "../js/variants.js";
 
 const loadDoc = (p) => parseLitematic(new Uint8Array(gunzipSync(readFileSync(p))));
@@ -102,6 +102,67 @@ test("TileSet: mixed alias families (tcross base + tee_slim variant) prefer the 
     for (let y = 0; y < teeBase.height; y++)
       for (let z = 0; z < teeBase.size; z++)
         assert.equal(stateKey(teeBase.blocks[x][y][z]), stateKey(tcrossBase.blocks[x][y][z]));
+});
+
+// ---------------------------------------------------------------------------
+// rotateDoc: whole-doc rotation (tileFromParsed -> rotatedCw -> region
+// adapter), used by the tile manager's per-tile rotate button.
+// ---------------------------------------------------------------------------
+
+function makeDoc(sizeX, sizeY, sizeZ, markerAt, markerState) {
+  const air = { id: "minecraft:air", props: {} };
+  return {
+    name: "test",
+    author: "test",
+    description: "",
+    regions: [
+      {
+        name: "test",
+        sizeX,
+        sizeY,
+        sizeZ,
+        get: (x, y, z) => (x === markerAt[0] && y === markerAt[1] && z === markerAt[2] ? markerState : air),
+      },
+    ],
+    warnings: [],
+  };
+}
+
+test("rotateDoc: 4x rotation is the identity (real preset tile)", () => {
+  const doc = loadDoc("presets/turn/turn.litematic");
+  let rotated = doc;
+  for (let i = 0; i < 4; i++) rotated = rotateDoc(rotated);
+
+  const original = doc.regions[0];
+  const region = rotated.regions[0];
+  assert.equal(region.sizeX, original.sizeX);
+  assert.equal(region.sizeY, original.sizeY);
+  assert.equal(region.sizeZ, original.sizeZ);
+  for (let x = 0; x < original.sizeX; x++)
+    for (let y = 0; y < original.sizeY; y++)
+      for (let z = 0; z < original.sizeZ; z++)
+        assert.equal(stateKey(region.get(x, y, z)), stateKey(original.get(x, y, z)));
+});
+
+test("rotateDoc: single rotation moves a marker block to the expected coordinate", () => {
+  // Port of Tile.rotated_cw's (x, z) -> (size-1-z, x): a marker at
+  // (x=0, y=0, z=0) in a 2x1x2 doc must land at (x=1, y=0, z=0) after one
+  // rotation (size=2 -> size-1-z = 1).
+  const marker = { id: "minecraft:stone", props: {} };
+  const doc = makeDoc(2, 1, 2, [0, 0, 0], marker);
+
+  const rotated = rotateDoc(doc);
+  const region = rotated.regions[0];
+  assert.equal(region.sizeX, 2);
+  assert.equal(region.sizeY, 1);
+  assert.equal(region.sizeZ, 2);
+  assert.equal(region.get(1, 0, 0).id, "minecraft:stone");
+  for (let x = 0; x < 2; x++) {
+    for (let z = 0; z < 2; z++) {
+      if (x === 1 && z === 0) continue;
+      assert.equal(region.get(x, 0, z).id, "minecraft:air");
+    }
+  }
 });
 
 test("TileSet: missing optional closed tile is synthesized (full, no air)", () => {

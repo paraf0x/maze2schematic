@@ -104,6 +104,27 @@ export function tileFromParsed(doc, name) {
   return { name, size: sx, height: sy, blocks };
 }
 
+/** Rotates a whole parseLitematic-shaped doc (single region) 90 degrees
+ * clockwise: `tileFromParsed` -> `rotatedCw` -> wraps the rotated
+ * `blocks[x][y][z]` back into a region adapter with `get(x, y, z)`. Used
+ * by the tile manager's per-tile rotate button, for tiles that were saved
+ * in the wrong orientation. Requires a square footprint (enforced by
+ * `tileFromParsed`, same as everywhere else a tile is loaded). Pure --
+ * returns a new doc-like object, doesn't mutate `doc`. */
+export function rotateDoc(doc) {
+  const name = doc.regions[0]?.name ?? "tile";
+  const tile = tileFromParsed(doc, name);
+  const rotated = rotatedCw(tile);
+  const get = (x, y, z) => rotated.blocks[x][y][z];
+  return {
+    name: doc.name,
+    author: doc.author,
+    description: doc.description,
+    regions: [{ name, sizeX: rotated.size, sizeY: rotated.height, sizeZ: rotated.size, get }],
+    warnings: [],
+  };
+}
+
 // Alternate filenames per canonical tile name (presets/ structure)
 export const ALIASES = {
   dead_end: ["dead_end", "deadend"],

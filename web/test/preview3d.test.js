@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildGeometryData, parseCssColor, MAX_FOOTPRINT_CELLS } from "../js/preview3d.js";
+import {
+  buildGeometryData,
+  parseCssColor,
+  MAX_FOOTPRINT_CELLS,
+  assemblyFromRegion,
+  renderTileImage,
+} from "../js/preview3d.js";
 import { colorForBlock } from "../js/preview2d.js";
 
 // ---------------------------------------------------------------------------
@@ -150,4 +156,90 @@ test("parseCssColor: hsl(...) colors (fallback from colorForBlock) are parsed", 
 
 test("MAX_FOOTPRINT_CELLS matches the value specified in the brief (1_000_000)", () => {
   assert.equal(MAX_FOOTPRINT_CELLS, 1_000_000);
+});
+
+// ---------------------------------------------------------------------------
+// assemblyFromRegion: pure conversion from a parseLitematic region into the
+// assembly shape buildGeometryData/assembleBlocks/writeLitematic consume.
+// ---------------------------------------------------------------------------
+
+// A small hand-built fake region: 2x2x2, matching parseLitematic's region
+// shape ({sizeX, sizeY, sizeZ, get(x,y,z)}).
+function fakeRegion(sizeX, sizeY, sizeZ, stateAt) {
+  return {
+    sizeX,
+    sizeY,
+    sizeZ,
+    get: (x, y, z) => stateAt(x, y, z),
+  };
+}
+
+const AIR_LIKE = { id: "minecraft:air", props: {} };
+
+test("assemblyFromRegion: air is always palette[0], even when a region has no air cells scanned first", () => {
+  const stone = { id: "minecraft:stone", props: {} };
+  // Every cell is stone -- air still has to occupy palette[0] per the
+  // buildGeometryData/writeLitematic contract, even though it's never
+  // referenced by any block index.
+  const region = fakeRegion(1, 1, 1, () => stone);
+  const assembly = assemblyFromRegion(region);
+  assert.equal(assembly.palette[0].id, "minecraft:air");
+  assert.equal(assembly.palette[1].id, "minecraft:stone");
+  assert.equal(assembly.blocks[0], 1);
+});
+
+test("assemblyFromRegion: dedupes the palette across repeated block states", () => {
+  const stone = { id: "minecraft:stone", props: {} };
+  const log = { id: "minecraft:oak_log", props: { axis: "y" } };
+  // 2x1x2 region: (0,0,0)=stone, (1,0,0)=stone, (0,0,1)=log, (1,0,1)=air.
+  const region = fakeRegion(2, 1, 2, (x, y, z) => {
+    if (z === 0) return stone;
+    if (x === 0) return log;
+    return AIR_LIKE;
+  });
+  const assembly = assemblyFromRegion(region);
+
+  // 3 distinct states seen (air, stone, log) -> palette length 3, air first.
+  assert.equal(assembly.palette.length, 3);
+  assert.equal(assembly.palette[0].id, "minecraft:air");
+  const stoneIdx = assembly.palette.findIndex((s) => s.id === "minecraft:stone");
+  const logIdx = assembly.palette.findIndex((s) => s.id === "minecraft:oak_log");
+  assert.ok(stoneIdx > 0 && logIdx > 0 && stoneIdx !== logIdx);
+
+  // blocks indexed (y*sizeZ+z)*sizeX+x
+  const at = (x, y, z) => assembly.blocks[(y * 2 + z) * 2 + x];
+  assert.equal(at(0, 0, 0), stoneIdx);
+  assert.equal(at(1, 0, 0), stoneIdx);
+  assert.equal(at(0, 0, 1), logIdx);
+  assert.equal(at(1, 0, 1), 0); // air
+});
+
+test("assemblyFromRegion: correct block indices and shape for a small hand-built region", () => {
+  const glass = { id: "minecraft:glass", props: {} };
+  const region = fakeRegion(2, 2, 1, (x, y, z) => (x === 1 && y === 1 && z === 0 ? glass : AIR_LIKE));
+  const assembly = assemblyFromRegion(region);
+
+  assert.equal(assembly.sizeX, 2);
+  assert.equal(assembly.sizeY, 2);
+  assert.equal(assembly.sizeZ, 1);
+  assert.equal(assembly.blocks.length, 4);
+  assert.ok(assembly.blocks instanceof Uint32Array);
+
+  const glassIdx = assembly.palette.findIndex((s) => s.id === "minecraft:glass");
+  assert.equal(assembly.blocks[(1 * 1 + 0) * 2 + 1], glassIdx); // (x=1,y=1,z=0)
+  assert.equal(assembly.blocks[(0 * 1 + 0) * 2 + 0], 0); // (x=0,y=0,z=0) air
+  assert.equal(assembly.blocks[(0 * 1 + 0) * 2 + 1], 0); // (x=1,y=0,z=0) air
+  assert.equal(assembly.blocks[(1 * 1 + 0) * 2 + 0], 0); // (x=0,y=1,z=0) air
+});
+
+// ---------------------------------------------------------------------------
+// renderTileImage: browser-only, must degrade gracefully in Node (no DOM/
+// WebGL access at all -- neither at module load time nor when called).
+// ---------------------------------------------------------------------------
+
+test("renderTileImage: returns null in a non-browser environment (no `document`)", () => {
+  assert.equal(typeof document, "undefined"); // sanity: this IS the Node test env
+  const region = fakeRegion(1, 1, 1, () => ({ id: "minecraft:stone", props: {} }));
+  const assembly = assemblyFromRegion(region);
+  assert.equal(renderTileImage(assembly, 96), null);
 });

@@ -19,6 +19,7 @@
 import * as THREE from "../vendor/three.module.js";
 import { OrbitControls } from "../vendor/OrbitControls.js";
 import { colorForBlock } from "./preview2d.js";
+import { AIR, stateKey } from "./litematic.js";
 
 // A footprint larger than this cell count (sizeX * sizeZ) disables the 3D
 // view (performance guard from the brief: ~ >200x200 cells at 5-wide tiles).
@@ -153,6 +154,145 @@ export function buildGeometryData(assembly) {
     indices: Uint32Array.from(indices),
     indexCount: indices.length,
   };
+}
+
+/** Converts a single parseLitematic region (`{sizeX, sizeY, sizeZ,
+ * get(x,y,z)}`) into the assembly shape `buildGeometryData` (and
+ * `assembleBlocks`/writeLitematic) consume: `{sizeX, sizeY, sizeZ, palette,
+ * blocks}`, `palette[0]` is always air, later entries deduped via
+ * `stateKey`, `blocks` a `Uint32Array` indexed `(y*sizeZ+z)*sizeX+x`. Pure
+ * -- no DOM/THREE access, so it's directly testable in Node. Used for tile
+ * thumbnails, where the tile manager only has the raw region (not a full
+ * assembled schematic). */
+export function assemblyFromRegion(region) {
+  const { sizeX, sizeY, sizeZ, get } = region;
+  const palette = [AIR];
+  const indexByKey = new Map([[stateKey(AIR), 0]]);
+  const blocks = new Uint32Array(sizeX * sizeY * sizeZ);
+
+  for (let y = 0; y < sizeY; y++) {
+    for (let z = 0; z < sizeZ; z++) {
+      for (let x = 0; x < sizeX; x++) {
+        const state = get(x, y, z);
+        const key = stateKey(state);
+        let idx = indexByKey.get(key);
+        if (idx === undefined) {
+          idx = palette.length;
+          indexByKey.set(key, idx);
+          palette.push(state);
+        }
+        blocks[(y * sizeZ + z) * sizeX + x] = idx;
+      }
+    }
+  }
+
+  return { sizeX, sizeY, sizeZ, palette, blocks };
+}
+
+// ---------------------------------------------------------------------------
+// Static isometric thumbnails (tile manager row previews)
+// ---------------------------------------------------------------------------
+
+// Lazy singleton: one shared offscreen renderer/scene/camera for every
+// thumbnail render. Browsers cap the number of live WebGL contexts, so a
+// per-thumbnail renderer would exhaust that budget once a pool has more
+// than a handful of tiles. Created on first use (browser-only); stays
+// `null` forever in Node (no `document`/WebGL).
+let _thumbState = null; // { renderer, scene, camera }
+
+function _getThumbState() {
+  if (_thumbState) return _thumbState;
+  if (typeof document === "undefined") return null;
+
+  const canvas = document.createElement("canvas");
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setClearColor(0x000000, 0);
+
+  const scene = new THREE.Scene();
+  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+  const directional = new THREE.DirectionalLight(0xffffff, 0.8);
+  directional.position.set(30, 50, 20);
+  scene.add(ambient, directional);
+
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 1000);
+
+  _thumbState = { renderer, scene, camera };
+  return _thumbState;
+}
+
+// Classic isometric view direction (looking toward the tile from up +
+// front-right), matching the main 3D preview's lighting angle.
+const _ISO_DIR = new THREE.Vector3(1, 0.9, 1).normalize();
+
+/** Renders a single small static isometric image of `assembly` (as
+ * returned by `assemblyFromRegion`/`assembleBlocks`) and returns a
+ * `sizePx` x `sizePx` PNG data URL, or `null` if WebGL/DOM isn't available
+ * or rendering throws for any reason (callers fall back to the 2D
+ * top-down thumbnail, see `drawTileThumb` in preview2d.js). Reuses one
+ * shared renderer/scene/camera (see `_getThumbState`); only the mesh
+ * geometry/material are created and disposed per call. No animation --
+ * a single synchronous render. */
+export function renderTileImage(assembly, sizePx) {
+  if (typeof document === "undefined") return null;
+  try {
+    const state = _getThumbState();
+    if (!state) return null;
+    const { renderer, scene, camera } = state;
+
+    if (!assembly || !(assembly.sizeX > 0) || !(assembly.sizeY > 0) || !(assembly.sizeZ > 0)) {
+      return null;
+    }
+
+    renderer.setSize(sizePx, sizePx, false);
+
+    const data = buildGeometryData(assembly);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
+    geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(data.colors, 3));
+    geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    const { sizeX, sizeY, sizeZ } = assembly;
+    const cx = sizeX / 2;
+    const cy = sizeY / 2;
+    const cz = sizeZ / 2;
+
+    // Orthographic frustum sized to fit the tile's bounding box (via its
+    // bounding sphere, which fits regardless of the view angle) with a
+    // small margin.
+    const radius = Math.max(0.5, Math.sqrt(sizeX * sizeX + sizeY * sizeY + sizeZ * sizeZ) / 2) * 1.15;
+    camera.left = -radius;
+    camera.right = radius;
+    camera.top = radius;
+    camera.bottom = -radius;
+    camera.near = 0.1;
+    camera.far = radius * 10;
+    const distance = radius * 4;
+    camera.position.set(cx, cy, cz).addScaledVector(_ISO_DIR, distance);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(cx, cy, cz);
+    camera.updateProjectionMatrix();
+
+    renderer.render(scene, camera);
+    const url = renderer.domElement.toDataURL("image/png");
+
+    scene.remove(mesh);
+    geometry.dispose();
+    material.dispose();
+
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/** Test-only: resets the thumbnail renderer singleton. */
+export function _resetThumbStateForTests() {
+  _thumbState = null;
 }
 
 // ---------------------------------------------------------------------------

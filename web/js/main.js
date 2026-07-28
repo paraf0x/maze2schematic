@@ -17,19 +17,37 @@
 import { makeRng } from "./rng.js";
 import { defaultOptions, presetOptions, generateMaze } from "./generate.js";
 import { TILE_NAMES } from "./classify.js";
-import { TileSet, TileError, ALIASES, styleOf } from "./tiles.js";
+import { TileSet, TileError, ALIASES, styleOf, rotateDoc } from "./tiles.js";
 import { parseVariantsConfig } from "./variants.js";
 import { assembleBlocks } from "./assemble.js";
 import { parseLitematic, writeLitematic } from "./litematic.js";
 import { gzip, gunzip, supportsCompression, downloadBlob } from "./export.js";
 import { drawMaze, drawTopdown, drawTileThumb } from "./preview2d.js";
-import { updateScene, setActive as set3dActive, handleResize as handle3dResize } from "./preview3d.js";
+import {
+  updateScene,
+  setActive as set3dActive,
+  handleResize as handle3dResize,
+  assemblyFromRegion,
+  renderTileImage,
+} from "./preview3d.js";
 
 const ASSEMBLY_DEBOUNCE_MS = 250;
 const WEIGHT_DEBOUNCE_MS = 300;
 const WEIGHT_MIN = 0.5;
 const WEIGHT_MAX = 10;
 const THUMB_SIZE = 48;
+const THUMB_RENDER_SIZE = 96; // backing resolution for the 3D thumbnail, 2x THUMB_SIZE for sharpness
+
+// Short orientation hint per canonical tile type, shown in the tile import
+// modal under the type <select> once a type is chosen.
+const TYPE_ORIENTATION_HINTS = {
+  dead_end: "opens north",
+  straight: "opens north + south",
+  turn: "opens north + east",
+  tee: "opens east + south + west",
+  cross: "opens all sides",
+  closed: "no openings",
+};
 
 function clampInt(value, lo, hi, fallback) {
   const n = Math.trunc(Number(value));
@@ -61,6 +79,14 @@ function typeForStem(stem) {
  * through -- needed to compute the style label (styleOf(stem, alias)). */
 function aliasForStem(stem, canonical) {
   return ALIASES[canonical].find((alias) => stem === alias || stem.startsWith(alias + "_"));
+}
+
+/** Sanitizes a user-entered variant name to the pool's stem alphabet:
+ * lowercase `[a-z0-9_-]+`. Used both for the tile import modal's variant
+ * input and for its prefilled guess (the filename's `_<style>` suffix, if
+ * any). Disallowed characters are dropped, not substituted. */
+function sanitizeVariant(raw) {
+  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "");
 }
 
 function init() {
@@ -412,6 +438,48 @@ function init() {
     }
   }
 
+  /** Builds the tile row's preview element: a small static isometric 3D
+   * render (via preview3d.js) when WebGL is available and rendering
+   * succeeds, falling back to the existing 2D top-down canvas thumbnail
+   * (`drawTileThumb`) otherwise -- e.g. no WebGL, or a malformed/irregular
+   * region that throws. Both element kinds share the `.tile-thumb` class
+   * (sizing/border/background), so nothing else needs to know which one it
+   * got. */
+  function renderTileThumbEl(region) {
+    let dataUrl = null;
+    if (region) {
+      try {
+        const assembly = assemblyFromRegion(region);
+        dataUrl = renderTileImage(assembly, THUMB_RENDER_SIZE);
+      } catch {
+        dataUrl = null;
+      }
+    }
+    if (dataUrl) {
+      const img = document.createElement("img");
+      img.className = "tile-thumb";
+      img.width = THUMB_SIZE;
+      img.height = THUMB_SIZE;
+      img.alt = "";
+      img.src = dataUrl;
+      return img;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "tile-thumb";
+    canvas.width = THUMB_SIZE;
+    canvas.height = THUMB_SIZE;
+    if (region) {
+      try {
+        drawTileThumb(canvas, region);
+      } catch {
+        // Malformed/irregular region -- leave the thumbnail blank rather
+        // than breaking the whole tile manager.
+      }
+    }
+    return canvas;
+  }
+
   function renderTileRow(stem, type) {
     const entry = state.pool.get(stem);
     const alias = aliasForStem(stem, type);
@@ -421,20 +489,8 @@ function init() {
     const row = document.createElement("div");
     row.className = "tile-row" + (isDisabled ? " tile-row-disabled" : "");
 
-    const canvas = document.createElement("canvas");
-    canvas.className = "tile-thumb";
-    canvas.width = THUMB_SIZE;
-    canvas.height = THUMB_SIZE;
     const region = entry.doc.regions[0];
-    if (region) {
-      try {
-        drawTileThumb(canvas, region);
-      } catch {
-        // Malformed/irregular region -- leave the thumbnail blank rather
-        // than breaking the whole tile manager.
-      }
-    }
-    row.appendChild(canvas);
+    row.appendChild(renderTileThumbEl(region));
 
     const label = document.createElement("span");
     label.className = "tile-name";
@@ -474,6 +530,27 @@ function init() {
     });
     row.appendChild(weightInput);
 
+    const rotateBtn = document.createElement("button");
+    rotateBtn.type = "button";
+    rotateBtn.className = "tile-rotate";
+    rotateBtn.title = "Rotate 90° clockwise";
+    rotateBtn.textContent = "↻";
+    rotateBtn.addEventListener("click", () => {
+      const current = state.pool.get(stem);
+      if (!current) return;
+      let rotated;
+      try {
+        rotated = rotateDoc(current.doc);
+      } catch (err) {
+        addMessage(`${stem}: rotate failed: ${err.message}`, "error");
+        return;
+      }
+      applyPoolChange(() => {
+        state.pool.set(stem, { ...current, doc: rotated });
+      });
+    });
+    row.appendChild(rotateBtn);
+
     return row;
   }
 
@@ -492,8 +569,151 @@ function init() {
   }
 
   // ---------------------------------------------------------------------
+  // Tile import modal: after parsing, the user explicitly chooses each
+  // file's tile type + optional variant name (rather than relying on the
+  // filename matching an alias). Plain div overlay, no external libs.
+  // ---------------------------------------------------------------------
+
+  /** Opens the import modal for a batch of already-parsed files
+   * (`{stem, filename, doc}`, `stem` = original filename without
+   * ".litematic", used only to prefill the row's type/variant guess).
+   * "Import" builds the pool stem from the chosen canonical type (+
+   * optional sanitized variant) for every row and applies them as one
+   * `applyPoolChange` batch -- so a batch that fails to build (TileError)
+   * is reverted as a whole, same as any other pool mutation. */
+  function openTileImportModal(parsedFiles) {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+
+    const card = document.createElement("div");
+    card.className = "modal-card";
+    overlay.appendChild(card);
+
+    const title = document.createElement("h3");
+    title.className = "modal-title";
+    title.textContent = "Import tiles";
+    card.appendChild(title);
+
+    const topHint = document.createElement("p");
+    topHint.className = "modal-hint";
+    topHint.textContent =
+      "Orientation matters: tiles must be saved in this canonical orientation " +
+      "(north = −Z in Litematica). Use the rotate button after import if needed.";
+    card.appendChild(topHint);
+
+    const list = document.createElement("div");
+    list.className = "tile-import-list";
+    card.appendChild(list);
+
+    const rows = parsedFiles.map(({ stem, filename, doc }) => {
+      const canonical = typeForStem(stem);
+      const variantGuess = canonical ? sanitizeVariant(styleOf(stem, aliasForStem(stem, canonical))) : "";
+
+      const row = document.createElement("div");
+      row.className = "tile-import-row";
+      list.appendChild(row);
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "tile-import-filename";
+      nameEl.textContent = filename;
+      row.appendChild(nameEl);
+
+      const fields = document.createElement("div");
+      fields.className = "tile-import-fields";
+      row.appendChild(fields);
+
+      const typeLabel = document.createElement("label");
+      typeLabel.className = "tile-import-field";
+      const typeSpan = document.createElement("span");
+      typeSpan.textContent = "Type";
+      typeLabel.appendChild(typeSpan);
+      const select = document.createElement("select");
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "choose type";
+      select.appendChild(placeholder);
+      for (const name of TILE_NAMES) {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      }
+      select.value = canonical ?? "";
+      typeLabel.appendChild(select);
+      fields.appendChild(typeLabel);
+
+      const variantLabel = document.createElement("label");
+      variantLabel.className = "tile-import-field";
+      const variantSpan = document.createElement("span");
+      variantSpan.textContent = "Variant";
+      variantLabel.appendChild(variantSpan);
+      const variantInput = document.createElement("input");
+      variantInput.type = "text";
+      variantInput.placeholder = "optional";
+      variantInput.value = variantGuess;
+      variantLabel.appendChild(variantInput);
+      fields.appendChild(variantLabel);
+
+      const hintEl = document.createElement("p");
+      hintEl.className = "tile-import-hint";
+      hintEl.textContent = canonical ? TYPE_ORIENTATION_HINTS[canonical] : "";
+      row.appendChild(hintEl);
+
+      select.addEventListener("change", () => {
+        hintEl.textContent = select.value ? TYPE_ORIENTATION_HINTS[select.value] : "";
+        updateImportButton();
+      });
+
+      return { filename, doc, select, variantInput };
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "modal-actions";
+    card.appendChild(actions);
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => overlay.remove());
+    actions.appendChild(cancelBtn);
+
+    const importBtn = document.createElement("button");
+    importBtn.type = "button";
+    importBtn.className = "primary";
+    importBtn.textContent = "Import";
+    actions.appendChild(importBtn);
+
+    function updateImportButton() {
+      importBtn.disabled = rows.some((r) => !r.select.value);
+    }
+    updateImportButton();
+
+    importBtn.addEventListener("click", () => {
+      const entries = rows.map(({ doc, select, variantInput }) => {
+        const canonical = select.value;
+        const variant = sanitizeVariant(variantInput.value.trim());
+        const stem = variant ? `${canonical}_${variant}` : canonical;
+        return { stem, filename: `${stem}.litematic`, doc };
+      });
+      overlay.remove();
+      const ok = applyPoolChange(() => {
+        for (const { stem, filename, doc } of entries) {
+          state.pool.set(stem, { filename, doc, source: "user" });
+        }
+      });
+      if (ok) {
+        addMessage(`${entries.length} tile${entries.length === 1 ? "" : "s"} imported.`, "info");
+      }
+    });
+
+    document.body.appendChild(overlay);
+  }
+
+  // ---------------------------------------------------------------------
   // Adding tiles: drag & drop and the file-picker button both funnel
-  // through this one function.
+  // through this one function, which parses every file and then hands the
+  // successfully-parsed ones to the import modal above (classification --
+  // type + variant -- is chosen there, not derived from the filename).
   // ---------------------------------------------------------------------
 
   async function addTileFiles(fileList) {
@@ -520,28 +740,12 @@ function init() {
         addMessage(`${file.name}: ${warning}`, "warning");
       }
       const stem = file.name.replace(/\.litematic$/i, "");
-      if (!typeForStem(stem)) {
-        addMessage(
-          `${file.name} does not match any tile type (expected: straight, turn, ` +
-            "tee/tcross, cross/xcross, dead_end/deadend, closed -- optionally with a " +
-            "_<style> suffix).",
-          "warning",
-        );
-        continue;
-      }
       parsed.push({ stem, filename: file.name, doc });
     }
 
     if (parsed.length === 0) return;
 
-    const ok = applyPoolChange(() => {
-      for (const { stem, filename, doc } of parsed) {
-        state.pool.set(stem, { filename, doc, source: "user" });
-      }
-    });
-    if (ok) {
-      addMessage(`${parsed.length} tile${parsed.length === 1 ? "" : "s"} added.`, "info");
-    }
+    openTileImportModal(parsed);
   }
 
   els.tileDrop.addEventListener("dragover", (ev) => {
