@@ -21,7 +21,7 @@ function presetEntries() {
 }
 const config = () => parseVariantsConfig(JSON.parse(readFileSync("presets/variants.json", "utf8")));
 
-test("rotateStateCw dreht facing/axis/rotation/rails/side-props", () => {
+test("rotateStateCw rotates facing/axis/rotation/rails/side-props", () => {
   assert.equal(rotateStateCw({ id: "a", props: { facing: "north" } }).props.facing, "east");
   assert.equal(rotateStateCw({ id: "a", props: { axis: "x" } }).props.axis, "z");
   assert.equal(rotateStateCw({ id: "a", props: { axis: "y" } }).props.axis, "y");
@@ -34,7 +34,7 @@ test("rotateStateCw dreht facing/axis/rotation/rails/side-props", () => {
   );
 });
 
-test("4x rotatedCw ist Identitaet (echtes Preset-Tile)", () => {
+test("4x rotatedCw is the identity (real preset tile)", () => {
   const tile = tileFromParsed(loadDoc("presets/turn/turn.litematic"), "turn");
   let t = tile;
   for (let i = 0; i < 4; i++) t = rotatedCw(t);
@@ -44,44 +44,44 @@ test("4x rotatedCw ist Identitaet (echtes Preset-Tile)", () => {
         assert.equal(stateKey(t.blocks[x][y][z]), stateKey(tile.blocks[x][y][z]));
 });
 
-test("styleOf trennt Alias und Style", () => {
+test("styleOf separates alias and style", () => {
   assert.equal(styleOf("straight", "straight"), DEFAULT_STYLE);
   assert.equal(styleOf("straight_slim", "straight"), "slim");
   assert.equal(styleOf("fancy", "straight"), "fancy");
 });
 
-test("TileSet aus Presets: Groesse, Styles, Rotation-Cache", () => {
+test("TileSet from presets: size, styles, rotation cache", () => {
   const ts = TileSet.fromEntries(presetEntries(), config());
   assert.ok(ts.size > 0 && ts.height > 0);
-  assert.ok(Object.keys(ts.variants).includes("tee")); // tcross-Alias aufgeloest
+  assert.ok(Object.keys(ts.variants).includes("tee")); // tcross alias resolved
   const t0 = ts.get("turn", 1, "slim");
   const t1 = ts.get("turn", 1, "slim");
-  assert.equal(t0, t1); // gecacht
+  assert.equal(t0, t1); // cached
   assert.equal(ts.get("turn", 5, DEFAULT_STYLE), ts.get("turn", 1, DEFAULT_STYLE)); // rotation % 4
 });
 
-test("TileSet: fehlende Pflicht-Tiles werfen TileError", () => {
+test("TileSet: missing required tiles throw TileError", () => {
   const entries = presetEntries().filter((e) => !e.filename.startsWith("xcross"));
   assert.throws(() => TileSet.fromEntries(entries, config()), TileError);
 });
 
-test("parseVariantsConfig: echtes variants.json + Fehlerfaelle", () => {
+test("parseVariantsConfig: real variants.json + error cases", () => {
   const c = config();
   assert.ok(c.clusters.slim.minSize >= 1);
   assert.ok(c.clusters.slim.maxSize >= c.clusters.slim.minSize);
   assert.throws(() => parseVariantsConfig({ weights: { a: -1 } }), TileError);
   assert.throws(() => parseVariantsConfig({ clusters: { s: { min: 5, max: 2 } } }), TileError);
-  // altes flaches Format
+  // old flat format
   assert.deepEqual(parseVariantsConfig({ straight: 3 }).weights, { straight: 3 });
 });
 
-test("TileSet: gemischte Alias-Familien (tcross-Basis + tee_slim-Variante) bevorzugen die Basis", () => {
-  // Regression fuer Finding 2: "tcross.litematic" (Basis fuer den "tcross"-
-  // Alias von "tee") zusammen mit "tee_slim.litematic" (Style-Variante fuer
-  // den "tee"-Alias) durften vorher dazu fuehren, dass die zuerst gelistete
-  // "tee"-Alias-Familie gewaehlt wird (nur der Style-Treffer, keine Basis)
-  // und ein spuriser TileError ("tee: Basis-Variante fehlt") geworfen wird,
-  // obwohl "tcross.litematic" eine gueltige Basis-Variante ist.
+test("TileSet: mixed alias families (tcross base + tee_slim variant) prefer the base", () => {
+  // Regression for finding 2: "tcross.litematic" (base for the "tcross"
+  // alias of "tee") together with "tee_slim.litematic" (style variant for
+  // the "tee" alias) used to cause the first-listed "tee" alias family to
+  // be chosen (only the style match, no base) and a spurious TileError
+  // ("tee: base variant missing") to be thrown, even though
+  // "tcross.litematic" is a valid base variant.
   const entries = presetEntries().filter((e) => !e.filename.startsWith("tcross"));
   const tcrossDoc = loadDoc("presets/tcross/tcross.litematic");
   entries.push({ filename: "tcross.litematic", doc: tcrossDoc });
@@ -89,9 +89,10 @@ test("TileSet: gemischte Alias-Familien (tcross-Basis + tee_slim-Variante) bevor
 
   const ts = TileSet.fromEntries(entries, config());
 
-  // "tee" bekommt die tcross-Basis (Alias mit DEFAULT_STYLE-Treffer wird
-  // bevorzugt); "tee_slim" gehoert zur Alias-Familie "tee" und wird verworfen,
-  // da fuer "tee" bereits der Alias "tcross" (mit Basis-Treffer) gewaehlt wurde.
+  // "tee" gets the tcross base (an alias with a DEFAULT_STYLE match is
+  // preferred); "tee_slim" belongs to the "tee" alias family and is
+  // discarded, since the alias "tcross" (with a base match) was already
+  // chosen for "tee".
   assert.deepEqual(Object.keys(ts.variants.tee), [DEFAULT_STYLE]);
   const teeBase = ts.get("tee", 0, DEFAULT_STYLE);
   const tcrossBase = tileFromParsed(tcrossDoc, "tcross");
@@ -103,7 +104,7 @@ test("TileSet: gemischte Alias-Familien (tcross-Basis + tee_slim-Variante) bevor
         assert.equal(stateKey(teeBase.blocks[x][y][z]), stateKey(tcrossBase.blocks[x][y][z]));
 });
 
-test("TileSet: fehlendes optionales closed-Tile wird synthetisiert (voll, keine Luft)", () => {
+test("TileSet: missing optional closed tile is synthesized (full, no air)", () => {
   const entries = presetEntries().filter((e) => !e.filename.startsWith("closed"));
   const ts = TileSet.fromEntries(entries, config());
   const closed = ts.get("closed", 0, DEFAULT_STYLE);

@@ -1,17 +1,17 @@
-// 2D-Vorschauen: Maze-Ansicht (Wandlinien) und Top-Down-Ansicht (Blockfarben
-// von oben). Reine Zeichenfunktionen ohne eigene DOM-Verdrahtung -- main.js
-// ruft `drawMaze`/`drawTopdown` aus den "maze-changed"/"assembly-changed"-
-// Listenern auf. Das Modul greift zur Ladezeit nicht auf `document`/`window`
-// zu (nur innerhalb der exportierten Funktionen, ueber die uebergebenen
-// Canvas-Objekte), damit es in Node importierbar bleibt.
+// 2D previews: maze view (wall lines) and top-down view (block colors seen
+// from above). Pure drawing functions with no DOM wiring of their own --
+// main.js calls `drawMaze`/`drawTopdown` from the "maze-changed"/
+// "assembly-changed" listeners. The module doesn't touch `document`/`window`
+// at load time (only inside the exported functions, via the passed-in
+// canvas objects), keeping it importable in Node.
 
 import { N, E, S, W } from "./generate.js";
 
-const WALL_COLOR = "#e6e6e6"; // entspricht --fg aus style.css
-const TOPDOWN_BG = "#1b1d22"; // entspricht --bg aus style.css
+const WALL_COLOR = "#e6e6e6"; // matches --fg in style.css
+const TOPDOWN_BG = "#1b1d22"; // matches --bg in style.css
 
-// Kleine Tabelle fuer gaengige Bloecke -- von preview3d.js (Task 12)
-// mitgenutzt, damit Top-Down- und 3D-Ansicht dieselben Farben zeigen.
+// Small table for common blocks -- shared with preview3d.js (task 12) so
+// the top-down and 3D views use the same colors.
 export const BLOCK_COLORS = {
   "minecraft:air": TOPDOWN_BG,
   "minecraft:stone": "#8a8a8a",
@@ -43,7 +43,7 @@ export const BLOCK_COLORS = {
   "minecraft:wall_torch": "#e8b23a",
 };
 
-/** Einfacher deterministischer String-Hash (fuer Fallback-Farben). */
+/** Simple deterministic string hash (for fallback colors). */
 function _hashString(str) {
   let h = 0;
   for (let i = 0; i < str.length; i++) {
@@ -52,11 +52,11 @@ function _hashString(str) {
   return h >>> 0;
 }
 
-/** Farbe fuer eine Block-Id: bekannte Bloecke aus `BLOCK_COLORS`, sonst
- * deterministische HSL-Farbe (Hash der Id -> Farbton, feste Saettigung/
- * Helligkeit). `air` wird hier nicht sonderbehandelt (steht bereits in
- * `BLOCK_COLORS`); Aufrufer, die Luft anders behandeln wollen (z.B. gar
- * nicht zeichnen), pruefen das selbst. */
+/** Color for a block id: known blocks from `BLOCK_COLORS`, otherwise a
+ * deterministic HSL color (hash of the id -> hue, fixed saturation/
+ * lightness). `air` is not special-cased here (it's already in
+ * `BLOCK_COLORS`); callers that want to treat air differently (e.g. not
+ * draw it at all) check for it themselves. */
 export function colorForBlock(id) {
   if (Object.prototype.hasOwnProperty.call(BLOCK_COLORS, id)) {
     return BLOCK_COLORS[id];
@@ -71,9 +71,9 @@ function _devicePixelRatio() {
   return 1;
 }
 
-/** Synct die Canvas-Pixelgroesse auf die Elterngroesse (CSS-Pixel * DPR) und
- * liefert einen 2D-Kontext, dessen Koordinatensystem bereits in CSS-Pixeln
- * arbeitet (per `setTransform`). Wird einmal pro Draw-Aufruf gerufen. */
+/** Syncs the canvas pixel size to the parent size (CSS pixels * DPR) and
+ * returns a 2D context whose coordinate system already works in CSS
+ * pixels (via `setTransform`). Called once per draw call. */
 function _syncCanvas(canvas) {
   const dpr = _devicePixelRatio();
   const cssWidth = canvas.clientWidth || canvas.width || 0;
@@ -85,11 +85,10 @@ function _syncCanvas(canvas) {
   return { ctx, cssWidth, cssHeight };
 }
 
-/** Zeichnet die Maze-Ansicht: fuer jede Zelle wird fuer jede NICHT offene
- * Richtung die entsprechende Kante als Linie gezeichnet (N = obere Kante,
- * E = rechte Kante, S = untere Kante, W = linke Kante). Vollstaendig
- * geschlossene Zellen (`mask.size === 0`) werden zusaetzlich als Flaeche
- * gefuellt. */
+/** Draws the maze view: for each cell, the corresponding edge is drawn as
+ * a line for every direction that is NOT open (N = top edge, E = right
+ * edge, S = bottom edge, W = left edge). Fully closed cells
+ * (`mask.size === 0`) are additionally filled as a solid area. */
 export function drawMaze(canvas, maze) {
   const { ctx, cssWidth, cssHeight } = _syncCanvas(canvas);
   ctx.clearRect(0, 0, cssWidth, cssHeight);
@@ -123,9 +122,9 @@ export function drawMaze(canvas, maze) {
   ctx.stroke();
 }
 
-/** Zeichnet die Top-Down-Ansicht: pro Saeule (x, z) wird von oben (y =
- * sizeY-1 abwaerts) der erste Nicht-Luft-Block gesucht und dessen Farbe als
- * Rechteck gezeichnet. Reine Luft-Saeulen bleiben auf dem Hintergrund
+/** Draws the top-down view: for each column (x, z), the first non-air
+ * block is found from the top (y = sizeY-1 downward) and its color is
+ * drawn as a rectangle. Columns that are all air stay on the background
  * (`TOPDOWN_BG`). */
 export function drawTopdown(canvas, assembly) {
   const { ctx, cssWidth, cssHeight } = _syncCanvas(canvas);

@@ -1,13 +1,13 @@
-"""Setzt aus Maze + TileSet das Gesamt-Schematic zusammen.
+"""Assembles the complete schematic from Maze + TileSet.
 
-Style-Zuweisung: Nicht-Default-Styles (z.B. "slim") werden als
-zusammenhaengende Cluster entlang des Ganggraphen verteilt, mit
-konfigurierbarer Min-/Max-Groesse (variants.json -> "clusters").
-Der Flaechenanteil je Style richtet sich nach den Gewichten.
+Style assignment: non-default styles (e.g. "slim") are distributed as
+connected clusters along the corridor graph, with configurable min/max
+size (variants.json -> "clusters"). The area share per style follows
+the weights.
 
-Optional steuert eine Bias-Map, wo die Cluster eines Styles bevorzugt
-entstehen: ein Textraster in Labyrinth-Groesse, eine Ziffer 0-9 pro Zelle
-('.' = 1). Hoehere Werte ziehen Seeds und Wachstum an, 0 sperrt die Zelle.
+Optionally a bias map controls where a style's clusters preferentially
+form: a text grid sized to the maze, one digit 0-9 per cell ('.' = 1).
+Higher values attract seeds and growth, 0 blocks the cell.
 """
 
 from __future__ import annotations
@@ -30,21 +30,21 @@ class BiasMapError(Exception):
 
 
 def load_bias_map(path: str, maze: Maze) -> BiasMap:
-    """Liest eine Bias-Map: eine Zeile pro Labyrinth-Zeile, ein Zeichen pro
-    Zelle. Erlaubt sind Ziffern 0-9 und '.' (= 1). Zeilen, die mit '#'
-    beginnen, sind Kommentare."""
+    """Reads a bias map: one line per maze row, one character per cell.
+    Digits 0-9 and '.' (= 1) are allowed. Lines starting with '#' are
+    comments."""
     with open(path) as f:
         lines = [line.rstrip("\n") for line in f if line.strip() and not line.startswith("#")]
     if len(lines) != maze.rows:
         raise BiasMapError(
-            f"{path}: {len(lines)} Zeilen, aber das Labyrinth hat {maze.rows} Zeilen."
+            f"{path}: {len(lines)} lines, but the maze has {maze.rows} rows."
         )
     bias: BiasMap = []
     for r, line in enumerate(lines):
         if len(line) != maze.cols:
             raise BiasMapError(
-                f"{path}: Zeile {r + 1} hat {len(line)} Zeichen, "
-                f"aber das Labyrinth hat {maze.cols} Spalten."
+                f"{path}: line {r + 1} has {len(line)} characters, "
+                f"but the maze has {maze.cols} columns."
             )
         row = []
         for ch in line:
@@ -53,10 +53,10 @@ def load_bias_map(path: str, maze: Maze) -> BiasMap:
             elif ch.isdigit():
                 row.append(float(ch))
             else:
-                raise BiasMapError(f"{path}: ungueltiges Zeichen {ch!r} in Zeile {r + 1}.")
+                raise BiasMapError(f"{path}: invalid character {ch!r} on line {r + 1}.")
         bias.append(row)
     if all(v == 0 for row in bias for v in row):
-        raise BiasMapError(f"{path}: alle Zellen sind 0, Style kann nirgends platziert werden.")
+        raise BiasMapError(f"{path}: all cells are 0, the style can't be placed anywhere.")
     return bias
 
 
@@ -75,9 +75,9 @@ def _free_for(
     style: str,
     bias: BiasMap | None,
 ) -> bool:
-    """Zelle ist frei, nicht per Bias-Map gesperrt und grenzt (ueber Gaenge)
-    nicht an denselben Style an -- sonst wuerden getrennt gewachsene Cluster
-    zu einem groesseren verschmelzen."""
+    """Cell is free, not blocked by the bias map, and (via corridors) does
+    not border the same style -- otherwise separately grown clusters would
+    merge into one larger cluster."""
     r, c = cell
     if grid[r][c] is not None:
         return False
@@ -95,9 +95,9 @@ def _grow_cluster(
     bias: BiasMap | None,
     rng: random.Random,
 ) -> set[tuple[int, int]]:
-    """Laesst einen Cluster vom Seed aus entlang der Gaenge auf freien Zellen
-    wachsen, bis `size` erreicht ist oder nichts mehr frei ist. Mit Bias-Map
-    waechst der Cluster bevorzugt in Zellen mit hohem Bias."""
+    """Grows a cluster from the seed along the corridors into free cells
+    until `size` is reached or nothing is free anymore. With a bias map the
+    cluster preferentially grows into cells with a high bias."""
     cluster = {seed}
     frontier = [seed]
     while frontier and len(cluster) < size:
@@ -118,12 +118,12 @@ def _grow_cluster(
 
 
 def assign_styles(maze: Maze, tileset: TileSet, rng: random.Random) -> StyleGrid:
-    """Weist jeder Zelle einen Style zu.
+    """Assigns a style to every cell.
 
-    Fuer jeden Nicht-Default-Style wird der Zielanteil aus den Gewichten
-    bestimmt und in zusammenhaengenden Clustern (min/max Zellen) platziert.
-    Ohne Cluster-Config gilt min = max = 1 (einzelne Zellen). Eine Bias-Map
-    steuert, wo die Cluster bevorzugt entstehen.
+    For each non-default style the target share is computed from the
+    weights and placed in connected clusters (min/max cells). Without a
+    cluster config, min = max = 1 (single cells) applies. A bias map
+    controls where the clusters preferentially form.
     """
     grid: StyleGrid = [[None] * maze.cols for _ in range(maze.rows)]
     weights = tileset.style_weights()
@@ -146,13 +146,13 @@ def assign_styles(maze: Maze, tileset: TileSet, rng: random.Random) -> StyleGrid
             seed = (rng.randrange(maze.rows), rng.randrange(maze.cols))
             if not _free_for(maze, grid, seed, style, bias):
                 continue
-            # Rejection-Sampling: Seeds proportional zum Bias annehmen
+            # Rejection sampling: accept seeds proportional to the bias
             if bias is not None and rng.random() * max_bias > bias[seed[0]][seed[1]]:
                 continue
             size = rng.randint(cmin, min(cmax, target - placed))
             cluster = _grow_cluster(maze, grid, seed, size, style, bias, rng)
             if len(cluster) < cmin:
-                continue  # eingeklemmt zwischen belegten Zellen: verwerfen
+                continue  # wedged between occupied cells: discard
             for r, c in cluster:
                 grid[r][c] = style
             placed += len(cluster)

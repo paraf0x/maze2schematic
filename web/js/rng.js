@@ -1,4 +1,4 @@
-// Seedbarer PRNG (mulberry32). Gleicher Seed => gleiche Sequenz.
+// Seedable PRNG (mulberry32). Same seed => same sequence.
 export function makeRng(seed) {
   let s = (Number(seed) >>> 0) || 0x9e3779b9;
   function random() {

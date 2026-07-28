@@ -1,14 +1,14 @@
-"""Erzeugt einfache 5x5-Beispiel-Tiles als .litematic-Dateien.
+"""Generates simple 5x5 sample tiles as .litematic files.
 
-Aufbau pro Tile (5 breit, 4 hoch, 5 tief):
-- y=0: Boden aus smooth_stone
-- y=1..3: Waende aus stone_bricks, Wege sind Luft
+Layout per tile (5 wide, 4 high, 5 deep):
+- y=0: floor of smooth_stone
+- y=1..3: walls of stone_bricks, paths are air
 
-Wege: das innere 3x3-Feld ist immer offen; pro offener Richtung wird der
-mittlere 3er-Streifen der jeweiligen Kante geoeffnet. Kanonische
-Ausrichtungen siehe classify.py.
+Paths: the inner 3x3 area is always open; for each open direction the
+middle 3-cell strip of that edge is opened. See classify.py for the
+canonical orientations.
 
-Nutzung: python -m maze2schematic.make_default_tiles [tiles-ordner]
+Usage: python -m maze2schematic.make_default_tiles [tiles-dir]
 """
 
 from __future__ import annotations
@@ -29,9 +29,9 @@ AIR = BlockState("minecraft:air")
 
 
 def _is_path(x: int, z: int, open_dirs: frozenset[int], path_width: int = 3) -> bool:
-    """Weg-Layout: zentrales Quadrat `path_width` x `path_width`, pro offener
-    Richtung ein Streifen von dort bis zur Kante. Ohne offene Seiten ist das
-    Tile komplett massiv (Felsbereiche bei Dungeon-Generierung)."""
+    """Path layout: a central `path_width` x `path_width` square, with a
+    strip from there to the edge for each open direction. With no open
+    sides the tile is fully solid (solid areas in dungeon generation)."""
     if not open_dirs:
         return False
     lo = (SIZE - path_width) // 2
@@ -59,9 +59,9 @@ def make_tile_region(
     floor_under_wall: BlockState | None = None,
     path_width: int = 3,
 ) -> Region:
-    """Baut ein Tile: Bodenschicht (y=0) + `wall_height` Schichten Mauer/Luft.
+    """Builds a tile: floor layer (y=0) + `wall_height` layers of wall/air.
 
-    `floor_under_wall` ist der Bodenblock unter den Mauern (Default: `floor`).
+    `floor_under_wall` is the floor block under the walls (default: `floor`).
     """
     region = Region(0, 0, 0, SIZE, 1 + wall_height, SIZE)
     for x in range(SIZE):
@@ -80,7 +80,7 @@ def main(tiles_dir: str = "tiles") -> None:
         schem = region.as_schematic(name=name, author="maze2schematic")
         path = os.path.join(tiles_dir, f"{name}.litematic")
         schem.save(path)
-        print(f"geschrieben: {path}")
+        print(f"written: {path}")
 
 
 if __name__ == "__main__":

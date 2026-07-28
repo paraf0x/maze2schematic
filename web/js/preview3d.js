@@ -1,41 +1,41 @@
-// 3D-Voxel-Vorschau: baut aus dem Assembly-Modell (Task 7) ein einziges
-// BufferGeometry-Mesh mit manuellem Face-Culling (nur Flaechen, deren
-// Nachbar Luft/ausserhalb ist, werden emittiert) und rendert es mit
-// three.js (vendort in web/vendor/, siehe web/vendor/LICENSE-three.txt).
+// 3D voxel preview: builds a single BufferGeometry mesh from the assembly
+// model (task 7) with manual face culling (only faces whose neighbor is
+// air/outside are emitted) and renders it with three.js (vendored in
+// web/vendor/, see web/vendor/LICENSE-three.txt).
 //
-// Die reine Geometrie-Berechnung (`buildGeometryData`) ist bewusst von THREE
-// entkoppelt -- sie kennt weder `THREE.BufferGeometry` noch sonst etwas aus
-// three.js, sondern liefert nur flache TypedArrays. Dadurch ist sie in Node
-// ohne WebGL/DOM testbar (siehe web/test/preview3d.test.js) und der Rest
-// dieses Moduls (Szene, Renderer, Kamera, Render-Loop) bleibt reiner
-// "Kleber" zwischen dieser Funktion und three.js.
+// The pure geometry computation (`buildGeometryData`) is deliberately
+// decoupled from THREE -- it knows neither `THREE.BufferGeometry` nor
+// anything else from three.js, only returning flat TypedArrays. That makes
+// it testable in Node without WebGL/DOM (see web/test/preview3d.test.js),
+// and the rest of this module (scene, renderer, camera, render loop)
+// remains pure "glue" between this function and three.js.
 //
-// Modul-Ladezeit-Konstraint (wie preview2d.js/main.js): kein `document`/
-// `window`/WebGL-Zugriff ausserhalb von Funktionskoerpern. Der statische
-// Import von three.module.js/OrbitControls.js ist unproblematisch, da beide
-// Dateien selbst beim Import keinen DOM-Zugriff ausfuehren (nur innerhalb
-// ihrer Klassen/Funktionen) -- verifiziert per `node -e "import(...)"`.
+// Module load-time constraint (like preview2d.js/main.js): no `document`/
+// `window`/WebGL access outside of function bodies. The static import of
+// three.module.js/OrbitControls.js is unproblematic since neither file
+// touches the DOM on import itself (only inside their classes/functions)
+// -- verified via `node -e "import(...)"`.
 
 import * as THREE from "../vendor/three.module.js";
 import { OrbitControls } from "../vendor/OrbitControls.js";
 import { colorForBlock } from "./preview2d.js";
 
-// Blockgroesse > diese Zellenzahl (sizeX * sizeZ) deaktiviert die 3D-Ansicht
-// (Performance-Guard aus dem Brief: ~ >200x200 Zellen bei 5er-Tiles).
+// A footprint larger than this cell count (sizeX * sizeZ) disables the 3D
+// view (performance guard from the brief: ~ >200x200 cells at 5-wide tiles).
 export const MAX_FOOTPRINT_CELLS = 1_000_000;
 
-const TOO_LARGE_MESSAGE = "3D-Ansicht für diese Größe deaktiviert";
+const TOO_LARGE_MESSAGE = "3D view disabled for this size";
 
 // ---------------------------------------------------------------------------
-// Reine Geometrie-Erzeugung (kein THREE, in Node testbar)
+// Pure geometry generation (no THREE, testable in Node)
 // ---------------------------------------------------------------------------
 
-// Sechs Wuerfelflaechen: `normal` zeigt nach aussen, `neighbor` ist der
-// Zellenoffset, dessen Luft-/Ausserhalb-Zustand die Flaeche sichtbar macht,
-// `verts` sind die vier Eckpunkt-Offsets (0/1 je Achse) relativ zur
-// Blockecke (x, y, z) in einer Reihenfolge, die bei Dreiecken (0,1,2) und
-// (0,2,3) via Kreuzprodukt (v1-v0) x (v2-v1) exakt `normal` ergibt (nach
-// aussen zeigende Winding-Reihenfolge, s. task-12-report.md).
+// Six cube faces: `normal` points outward, `neighbor` is the cell offset
+// whose air/outside state makes the face visible, `verts` are the four
+// vertex offsets (0/1 per axis) relative to the block corner (x, y, z) in
+// an order that, for triangles (0,1,2) and (0,2,3) via cross product
+// (v1-v0) x (v2-v1), yields exactly `normal` (outward-facing winding
+// order, see task-12-report.md).
 const FACES = [
   { normal: [1, 0, 0], neighbor: [1, 0, 0], verts: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] }, // +X
   { normal: [-1, 0, 0], neighbor: [-1, 0, 0], verts: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] }, // -X
@@ -45,9 +45,10 @@ const FACES = [
   { normal: [0, 0, -1], neighbor: [0, 0, -1], verts: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] }, // -Z
 ];
 
-/** Parst eine von `colorForBlock` gelieferte CSS-Farbe (`#rrggbb` oder
- * `hsl(h, s%, l%)`) zu `[r, g, b]` in [0, 1]. Bewusst ohne THREE.Color, damit
- * `buildGeometryData` THREE-frei bleibt. Unbekannte Formate liefern Weiss. */
+/** Parses a CSS color returned by `colorForBlock` (`#rrggbb` or
+ * `hsl(h, s%, l%)`) into `[r, g, b]` in [0, 1]. Deliberately without
+ * THREE.Color, so `buildGeometryData` stays THREE-free. Unknown formats
+ * return white. */
 export function parseCssColor(css) {
   if (typeof css !== "string") return [1, 1, 1];
   const hex = /^#([0-9a-fA-F]{6})$/.exec(css.trim());
@@ -82,12 +83,12 @@ function _hueToRgb(p, q, t) {
   return p;
 }
 
-/** Baut die gemergte Voxel-Geometrie fuer ein Assembly (Task 7). Fuer jeden
- * Nicht-Luft-Block werden nur die Flaechen emittiert, deren Nachbar Luft
- * oder ausserhalb der Assembly liegt (manuelles Face-Culling -- keine
- * Innenflaechen-Artefakte, deutlich weniger Dreiecke als ein Wuerfel pro
- * Block). Liefert flache TypedArrays, direkt geeignet fuer
- * `BufferGeometry.setAttribute`/`setIndex`; enthaelt kein THREE-Objekt. */
+/** Builds the merged voxel geometry for an assembly (task 7). For every
+ * non-air block, only the faces whose neighbor is air or outside the
+ * assembly are emitted (manual face culling -- no interior-face
+ * artifacts, far fewer triangles than one cube per block). Returns flat
+ * TypedArrays, directly suitable for `BufferGeometry.setAttribute`/
+ * `setIndex`; contains no THREE object. */
 export function buildGeometryData(assembly) {
   const empty = () => ({
     positions: new Float32Array(0),
@@ -155,22 +156,21 @@ export function buildGeometryData(assembly) {
 }
 
 // ---------------------------------------------------------------------------
-// THREE-Verdrahtung (Szene, Renderer, Render-Loop) -- alles hinter
-// Funktionsaufrufen, kein DOM-/WebGL-Zugriff zur Modul-Ladezeit.
+// THREE wiring (scene, renderer, render loop) -- all behind function calls,
+// no DOM/WebGL access at module load time.
 // ---------------------------------------------------------------------------
 
 let _sceneState = null; // { renderer, scene, camera, controls, mesh, container, active, rafId, pendingAssembly }
 
-/** Erstellt Renderer/Szene/Kamera/Controls fuer `container` (typischerweise
- * `#view-3d`). Wird lazy beim ersten Aktivieren des 3D-Tabs aus main.js
- * aufgerufen (vermeidet WebGL-Kontext-Erzeugung, solange der Tab nie
- * angeklickt wird). Mehrfachaufruf ist ein No-Op (liefert den bestehenden
- * State zurueck). */
+/** Creates renderer/scene/camera/controls for `container` (typically
+ * `#view-3d`). Called lazily from main.js the first time the 3D tab is
+ * activated (avoids creating a WebGL context as long as the tab is never
+ * clicked). Repeat calls are a no-op (returns the existing state). */
 export function initScene(container) {
   if (_sceneState) return _sceneState;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1b1d22); // entspricht --bg aus style.css
+  scene.background = new THREE.Color(0x1b1d22); // matches --bg in style.css
 
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 10000);
   camera.position.set(10, 15, 20);
@@ -197,7 +197,7 @@ export function initScene(container) {
     active: false,
     rafId: null,
     pendingAssembly: undefined,
-    lastSize: null, // { x, y, z } der zuletzt angewendeten Assembly-Groesse
+    lastSize: null, // { x, y, z } of the last applied assembly size
   };
 
   _resize();
@@ -214,12 +214,12 @@ function _resize() {
   camera.updateProjectionMatrix();
 }
 
-/** Disposed das alte Mesh (Geometrie + Material) und baut ein neues aus
- * `assembly` -- oder zeigt bei zu grosser Grundflaeche (`sizeX * sizeZ >
- * MAX_FOOTPRINT_CELLS`) stattdessen eine Meldung in `container` statt eines
- * Mesh. Kann aufgerufen werden, bevor `initScene` je lief (z.B. wenn der
- * 3D-Tab noch nie aktiv war) -- merkt sich das Assembly dann nur und baut es
- * beim naechsten `initScene`/`setActive(true)` nach. */
+/** Disposes the old mesh (geometry + material) and builds a new one from
+ * `assembly` -- or, if the footprint is too large (`sizeX * sizeZ >
+ * MAX_FOOTPRINT_CELLS`), shows a message in `container` instead of a mesh.
+ * Can be called before `initScene` has ever run (e.g. if the 3D tab has
+ * never been active) -- in that case it just remembers the assembly and
+ * builds it on the next `initScene`/`setActive(true)`. */
 export function updateScene(assembly) {
   if (!_sceneState) {
     _pendingAssemblyBeforeInit = assembly;
@@ -263,10 +263,10 @@ function _applyAssembly(assembly) {
   state.scene.add(mesh);
   state.mesh = mesh;
 
-  // Kamera/Controls-Target nur neu positionieren, wenn sich die Abmessungen
-  // seit dem letzten updateScene-Aufruf geaendert haben -- sonst wuerde jede
-  // kleine Parameter-Aenderung (z.B. ein Slider-Tupfer) die Sicht des
-  // Nutzers zuruecksetzen, obwohl sich die Groesse gar nicht geaendert hat.
+  // Only reposition the camera/controls target if the dimensions have
+  // changed since the last updateScene call -- otherwise every small
+  // parameter change (e.g. a slider nudge) would reset the user's view
+  // even though the size hasn't actually changed.
   const dimsChanged =
     !state.lastSize ||
     state.lastSize.x !== assembly.sizeX ||
@@ -301,11 +301,11 @@ function _clearMessage(container) {
   if (el) el.style.display = "none";
 }
 
-/** Aktiviert/deaktiviert den Render-Loop (`requestAnimationFrame`), damit
- * die 3D-Ansicht nur rendert, waehrend der 3D-Tab sichtbar ist. Beim ersten
- * `setActive(true)` (oder falls `initScene` noch nicht lief) wird die Szene
- * lazy initialisiert und ein evtl. vor der Initialisierung angekommenes
- * `updateScene`-Assembly nachgeholt. */
+/** Activates/deactivates the render loop (`requestAnimationFrame`) so the
+ * 3D view only renders while the 3D tab is visible. On the first
+ * `setActive(true)` (or if `initScene` hasn't run yet), the scene is
+ * initialized lazily and any `updateScene` assembly that arrived before
+ * initialization is applied. */
 export function setActive(container, active) {
   if (active && !_sceneState) {
     initScene(container);
@@ -349,13 +349,13 @@ function _stopLoop() {
   }
 }
 
-/** Ruft `_resize` erneut auf, z.B. bei `window.resize` oder Tab-Wechsel
- * (Container-Groesse hat sich veraendert). No-Op vor `initScene`. */
+/** Calls `_resize` again, e.g. on `window.resize` or a tab switch
+ * (container size has changed). No-op before `initScene`. */
 export function handleResize() {
   _resize();
 }
 
-/** Nur fuer Tests: setzt den internen Modul-State zurueck. */
+/** Test-only: resets the internal module state. */
 export function _resetForTests() {
   _sceneState = null;
   _pendingAssemblyBeforeInit = undefined;

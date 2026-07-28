@@ -1,45 +1,44 @@
 # maze2schematic
 
-Baut aus einem Labyrinth und Litematica-Tile-Schematics ein Gesamt-Schematic
-fuer Minecraft. Als Labyrinth-Quelle dient entweder eine SVG
-(mazegenerator.net, "Line Maze"-Format) oder der eingebaute Generator
-(Portierung von [jsmaze](https://morgan3d.github.io/misc/jsmaze/) von
-Morgan McGuire, BSD-Lizenz).
+Builds a complete schematic for Minecraft from a maze and Litematica tile
+schematics. The maze source is either an SVG (mazegenerator.net, "line
+maze" format) or the built-in generator (a port of
+[jsmaze](https://morgan3d.github.io/misc/jsmaze/) by Morgan McGuire, BSD
+license).
 
-## Web-Version
+## Web version
 
-Unter `https://<user>.github.io/<repo>/` laeuft eine statische Portierung
-komplett im Browser: Generator, Tile-Zusammenbau und Export laufen als
-JavaScript client-seitig, es wird kein Server benoetigt (ausser zum
-Ausliefern der statischen Dateien). Presets, 2D-/3D-Vorschau und der
-Litematica-Export (`.litematic`, gzip-komprimiert) sind ohne Python oder
-Installation nutzbar.
+A static port runs entirely in the browser at
+`https://paraf0x.github.io/maze2schematic/`: the generator, tile assembly,
+and export all run client-side as JavaScript, no server required (other
+than to serve the static files). Presets, 2D/3D preview, and the
+Litematica export (`.litematic`, gzip-compressed) work without Python or
+any installation.
 
-Die Web-Presets unter `web/presets/` sind eine Kopie von `presets/`; nach
-Aenderungen an `presets/` (neue Tiles, `variants.json`) muss
+The web presets under `web/presets/` are a copy of `presets/`; after
+changes to `presets/` (new tiles, `variants.json`), rerun
 
 ```bash
 .venv/bin/python scripts/make_web_presets.py
 ```
 
-erneut ausgefuehrt werden, um `web/presets/` und dessen `index.json` zu
-aktualisieren.
+to update `web/presets/` and its `index.json`.
 
-Lokal starten (vom Repo-Root, damit sowohl die Root-`index.html` als auch
-`web/` erreichbar sind):
+Run locally (from the repo root, so both the root `index.html` and
+`web/` are reachable):
 
 ```bash
 python3 -m http.server 8080
 ```
 
-und dann <http://localhost:8080/web/> im Browser oeffnen. Alternativ direkt
-mit `web/` als Docroot:
+then open <http://localhost:8080/web/> in your browser. Alternatively,
+serve `web/` directly as the docroot:
 
 ```bash
 python3 -m http.server 8080 -d web
 ```
 
-Tests laufen mit Node (kein Build-Schritt noetig):
+Tests run with Node (no build step needed):
 
 ```bash
 node --test web/test/*.test.js
@@ -52,79 +51,79 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-## Nutzung
+## Usage
 
 ```bash
-# 1. (Optional) Beispiel-Tiles erzeugen, falls noch keine eigenen vorhanden sind
+# 1. (Optional) generate sample tiles if you don't have your own yet
 .venv/bin/python -m maze2schematic.make_default_tiles tiles
 
-# 2. Vorschau: erkanntes Labyrinth als ASCII pruefen
+# 2. Preview: check the detected maze as ASCII
 .venv/bin/python -m maze2schematic "20 by 20 orthogonal maze.svg" --preview
 
-# 3. Schematic bauen
+# 3. Build the schematic
 .venv/bin/python -m maze2schematic "20 by 20 orthogonal maze.svg" --tiles tiles -o maze.litematic
 
-# Alternativ: Labyrinth generieren statt SVG (jsmaze-Algorithmus)
+# Alternative: generate a maze instead of an SVG (jsmaze algorithm)
 .venv/bin/python -m maze2schematic --generate 20x20 --tiles presets -o maze.litematic
 .venv/bin/python -m maze2schematic --generate 30x20 --dungeon catacombs --seed 7 --tiles presets -o dungeon.litematic
 ```
 
-Weitere Optionen: `--name`, `--author` fuer die Schematic-Metadaten und
-`--seed` fuer reproduzierbare Generierung und Variantenauswahl (siehe unten).
+Further options: `--name`, `--author` for the schematic metadata, and
+`--seed` for reproducible generation and variant selection (see below).
 
 ## Generator (jsmaze)
 
-Mit `--generate SPALTENxZEILEN` wird das Labyrinth direkt erzeugt
-(Algorithmus von [jsmaze](https://morgan3d.github.io/misc/jsmaze/)).
-Parameter:
+`--generate COLSxROWS` generates the maze directly (algorithm from
+[jsmaze](https://morgan3d.github.io/misc/jsmaze/)). Parameters:
 
-- `--straightness 0..1`: bevorzugt gerade Gaenge
-- `--shortcuts 0..1`: zusaetzliche Verbindungen, erzeugt Loops (0 = perfektes
-  Labyrinth mit eindeutiger Loesung)
-- `--coverage 0..1`: wie viel der Flaeche ausgegraben wird; bei < 1 bleiben
-  massive Bereiche stehen (closed-Tiles)
-- `--rooms 0..1`: Anteil der Sackgassen, die zu Raeumen ausgebaut werden
-- `--h-loop` / `--v-loop`: umlaufend (Torus); Gaenge enden offen am Rand,
-  sinnvoll wenn das Schematic gekachelt wird
-- `--h-mirror` / `--v-mirror`: Spiegelsymmetrie (Loesbarkeit nicht garantiert)
-- `--no-h-border` / `--no-v-border`: ohne Aussenwand
-- `--no-entrances`: keinen Ein-/Ausgang oben/unten in den Rand stanzen
-- `--dungeon NAME`: Parameter-Presets der jsmaze-Website
+- `--straightness 0..1`: prefers straight corridors
+- `--shortcuts 0..1`: extra connections, creates loops (0 = a perfect maze
+  with a unique solution)
+- `--coverage 0..1`: how much of the area is carved out; at < 1, solid
+  areas remain (closed tiles)
+- `--rooms 0..1`: fraction of dead ends expanded into rooms
+- `--h-loop` / `--v-loop`: wraparound (torus); corridors end open at the
+  border, useful when the schematic is tiled
+- `--h-mirror` / `--v-mirror`: mirror symmetry (solvability not guaranteed)
+- `--no-h-border` / `--no-v-border`: without an outer wall
+- `--no-entrances`: don't punch an entrance/exit into the top/bottom border
+- `--dungeon NAME`: parameter presets from the jsmaze website
   (labyrinth, catacombs, hedge, palace, fortress, suburb, city, pacman,
-  starship, garden, forbidden); einzelne Optionen ueberschreiben das Preset
+  starship, garden, forbidden); individual options override the preset
 
-Hinweise: Die tatsaechliche Groesse kann je nach Optionen leicht abweichen
-(der Algorithmus rundet). Raeume koennen im Original Wandpfosten entfernen;
-im Tile-Modell bleiben die Pfosten der cross-Tiles als Saeulen stehen --
-Raeume werden also zu Saeulenhallen. Vollstaendig geschlossene Zellen nutzen
-das closed-Tile (komplett massiv).
+Notes: the actual size may deviate slightly depending on the options (the
+algorithm rounds). In the original, rooms can remove wall posts; in the
+tile model the posts of the cross tiles remain standing as pillars --
+rooms therefore become pillared halls. Fully closed cells use the closed
+tile (completely solid).
 
-## SVG-Format
+## SVG format
 
-Erwartet wird das "Line Maze"-Format von [mazegenerator.net](https://www.mazegenerator.net/):
-Die Polylines sind die **begehbaren Pfade** (nicht die Waende) und verbinden die
-Zentren benachbarter Zellen. Ein-/Ausgang sind kurze Stummel ueber den Rand
-hinaus. Zellgroesse und Gitterausdehnung werden automatisch erkannt, die
-Labyrinth-Groesse ist also beliebig.
+The expected format is the "line maze" format from
+[mazegenerator.net](https://www.mazegenerator.net/): the polylines are
+the **walkable paths** (not the walls) and connect the centers of
+neighboring cells. Entrances/exits are short stubs extending past the
+border. Cell size and grid extent are detected automatically, so the
+maze size is arbitrary.
 
-## Tile-Konventionen
+## Tile conventions
 
-Der Tiles-Ordner unterstuetzt zwei Layouts:
+The tiles folder supports two layouts:
 
-- flach: `tiles/straight.litematic`, `tiles/tee.litematic`, ...
-- Unterordner (presets): `presets/straight/*.litematic`, `presets/tcross/*.litematic`, ...
-  Jede `.litematic`-Datei im Unterordner ist eine **Variante** des Tile-Typs,
-  aus der pro Zelle zufaellig gewaehlt wird. Als Ordnernamen sind auch die
-  Aliase `tcross` (= tee), `xcross` (= cross) und `deadend` (= dead_end) erlaubt.
+- flat: `tiles/straight.litematic`, `tiles/tee.litematic`, ...
+- subfolders (presets): `presets/straight/*.litematic`, `presets/tcross/*.litematic`, ...
+  Each `.litematic` file in the subfolder is a **variant** of the tile
+  type, chosen randomly per cell. The aliases `tcross` (= tee), `xcross`
+  (= cross), and `deadend` (= dead_end) are also allowed as folder names.
 
-Jedes Tile hat genau eine Region, eine quadratische Grundflaeche (z.B. 5x5) und
-alle Tiles muessen dieselbe Groesse und Hoehe haben. Die Tile-Groesse wird aus
-den Dateien gelesen, 5x5 ist also nicht fest verdrahtet.
+Each tile has exactly one region, a square footprint (e.g. 5x5), and all
+tiles must have the same size and height. The tile size is read from the
+files, so 5x5 isn't hardcoded.
 
-### Varianten-Konfiguration (`variants.json`)
+### Variant configuration (`variants.json`)
 
-Eine optionale `variants.json` im Tiles-Ordner steuert Gewichte und
-Cluster-Verhalten der Varianten:
+An optional `variants.json` in the tiles folder controls the weights and
+cluster behavior of the variants:
 
 ```json
 {
@@ -138,35 +137,35 @@ Cluster-Verhalten der Varianten:
 }
 ```
 
-- `weights`: Schluessel ist der Dateiname ohne `.litematic`. Nicht
-  aufgefuehrte Varianten haben Gewicht 1, Gewicht 0 deaktiviert eine
-  Variante. Die Gewichte bestimmen den Flaechenanteil je Variante.
-- `clusters`: Varianten werden ueber ihren Namens-Suffix zu einem "Style"
-  gruppiert (`straight_slim` + `turn_slim` + ... = Style `slim`). Ein
-  Cluster-Eintrag sorgt dafuer, dass dieser Style in zusammenhaengenden
-  Bereichen von `min` bis `max` Zellen entlang der Gaenge auftritt statt
-  einzeln verstreut. Ohne Eintrag werden Zellen einzeln gewuerfelt.
-- `map` (optional): Bias-Map, die steuert, **wo** die Cluster eines Styles
-  entstehen. Pfad relativ zum Tiles-Ordner; ohne `map` ist die Verteilung
-  gleichmaessig zufaellig.
+- `weights`: the key is the filename without `.litematic`. Variants not
+  listed have weight 1, weight 0 disables a variant. The weights
+  determine the area share per variant.
+- `clusters`: variants are grouped into a "style" via their name suffix
+  (`straight_slim` + `turn_slim` + ... = style `slim`). A cluster entry
+  makes that style occur in connected areas of `min` to `max` cells along
+  the corridors instead of being scattered individually. Without an
+  entry, cells are rolled individually.
+- `map` (optional): a bias map controlling **where** a style's clusters
+  form. Path relative to the tiles folder; without `map` the distribution
+  is uniformly random.
 
-Mit `--seed <zahl>` ist die Verteilung reproduzierbar.
+With `--seed <number>` the distribution is reproducible.
 
-### Bias-Map
+### Bias map
 
-Eine Bias-Map ist ein Textraster in Labyrinth-Groesse: eine Zeile pro
-Labyrinth-Zeile, ein Zeichen pro Zelle. Ziffer `0`-`9` = Gewicht der Zelle,
-`.` = 1, `0` sperrt die Zelle komplett. Zeilen, die mit `#` beginnen, sind
-Kommentare. Seeds und Wachstum der Cluster bevorzugen Zellen mit hohem
-Gewicht; der Gesamtanteil des Styles bleibt durch `weights` bestimmt.
+A bias map is a text grid sized to the maze: one line per maze row, one
+character per cell. Digit `0`-`9` = weight of the cell, `.` = 1, `0`
+blocks the cell entirely. Lines starting with `#` are comments. Seeds and
+cluster growth prefer cells with a high weight; the style's overall share
+is still determined by `weights`.
 
-Eine leere Vorlage in der passenden Groesse erzeugt:
+Generate an empty template of the matching size:
 
 ```bash
 .venv/bin/python -m maze2schematic "20 by 20 orthogonal maze.svg" --map-template presets/slim_map.txt
 ```
 
-Beispiel (obere Haelfte gesperrt, unten erlaubt, rechts unten bevorzugt):
+Example (top half blocked, bottom allowed, bottom-right preferred):
 
 ```
 00000000000000000000
@@ -176,38 +175,39 @@ Beispiel (obere Haelfte gesperrt, unten erlaubt, rechts unten bevorzugt):
 33344445555666677778
 ```
 
-Pro Typ wird nur **eine** Datei in kanonischer Ausrichtung benoetigt; alle
-Rotationen erzeugt das Tool selbst (inklusive Blockstates wie `facing`, `axis`,
-`rotation`, Rail-`shape` und Verbindungs-Properties von Zaeunen/Scheiben/Mauern).
+Only **one** file in canonical orientation is needed per type; the tool
+generates all rotations itself (including block states like `facing`,
+`axis`, `rotation`, rail `shape`, and connection properties of
+fences/panes/walls).
 
-| Datei | offene Seiten (kanonisch) | benoetigt |
+| File | open sides (canonical) | required |
 | --- | --- | --- |
-| `dead_end.litematic` | Norden | ja |
-| `straight.litematic` | Nord + Sued | ja |
-| `turn.litematic` | Nord + Ost | ja |
-| `tee.litematic` | Ost + Sued + West (zu: Norden) | ja |
-| `cross.litematic` | alle vier | ja |
-| `closed.litematic` | keine | optional |
+| `dead_end.litematic` | north | yes |
+| `straight.litematic` | north + south | yes |
+| `turn.litematic` | north + east | yes |
+| `tee.litematic` | east + south + west (closed: north) | yes |
+| `cross.litematic` | all four | yes |
+| `closed.litematic` | none | optional |
 
-"Norden" im Tile = die -Z-Richtung in Litematica; im fertigen Schematic zeigt
-die oberste SVG-Zeile nach -Z. Damit die Wege zusammenpassen, sollten die
-Oeffnungen an den Kanten bei allen Tiles an denselben Positionen liegen (bei
-den Beispiel-Tiles: der mittlere 3er-Streifen jeder Kante).
+"North" in a tile = the -Z direction in Litematica; in the finished
+schematic the topmost SVG row faces -Z. For the paths to line up, the
+openings at the edges should be at the same positions across all tiles
+(in the sample tiles: the middle 3-cell strip of each edge).
 
-Hinweise:
+Notes:
 
-- Tile-Entities (Kisten, Schilder, ...) in Tiles werden derzeit ignoriert
-  (Warnung beim Laden).
-- Waende zwischen zwei Tiles sind doppelt so dick wie eine Tile-Randwand, da
-  jedes Tile seinen eigenen Rand mitbringt.
+- Tile entities (chests, signs, ...) in tiles are currently ignored
+  (a warning is printed when loading).
+- Walls between two tiles are twice as thick as a tile's border wall,
+  since each tile brings its own border.
 
-## Projektstruktur
+## Project structure
 
-- `maze2schematic/svg_parser.py` - SVG zu Zellgitter mit offenen Richtungen
-- `maze2schematic/generate.py` - jsmaze-Portierung (Generator statt SVG)
-- `maze2schematic/classify.py` - Zellmaske zu Tile-Typ + Rotation
-- `maze2schematic/tiles.py` - Tile-Loader und 90-Grad-Rotator
-- `maze2schematic/assemble.py` - setzt das Gesamt-Schematic zusammen
-- `maze2schematic/make_default_tiles.py` - erzeugt einfache Beispiel-Tiles
-- `maze2schematic/make_presets.py` - erzeugt die presets/-Struktur (breite + slim-Varianten, variants.json)
+- `maze2schematic/svg_parser.py` - SVG to a cell grid with open directions
+- `maze2schematic/generate.py` - jsmaze port (generator instead of SVG)
+- `maze2schematic/classify.py` - cell mask to tile type + rotation
+- `maze2schematic/tiles.py` - tile loader and 90-degree rotator
+- `maze2schematic/assemble.py` - assembles the complete schematic
+- `maze2schematic/make_default_tiles.py` - generates simple sample tiles
+- `maze2schematic/make_presets.py` - generates the presets/ structure (wide + slim variants, variants.json)
 - `maze2schematic/__main__.py` - CLI

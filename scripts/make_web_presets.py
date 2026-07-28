@@ -1,6 +1,6 @@
 # scripts/make_web_presets.py
-"""Kopiert presets/ nach web/presets/ und erzeugt index.json (GitHub Pages
-hat kein Directory-Listing). Nach Aenderungen an presets/ erneut ausfuehren."""
+"""Copies presets/ to web/presets/ and generates index.json (GitHub Pages
+has no directory listing). Rerun after changes to presets/."""
 import json
 import shutil
 from pathlib import Path
@@ -26,7 +26,7 @@ def main() -> None:
         shutil.copy2(variants, DST / "variants.json")
         manifest["variants"] = "variants.json"
     (DST / "index.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"{len(files)} Tiles nach {DST} kopiert.")
+    print(f"{len(files)} tiles copied to {DST}.")
 
 
 if __name__ == "__main__":

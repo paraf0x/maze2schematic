@@ -1,11 +1,11 @@
-// Setzt aus Maze + TileSet das Gesamt-Schematic zusammen. Port von
-// maze2schematic/assemble.py, ohne Bias-Map-Teile (load_bias_map entfaellt,
-// bias-Parameter entfallen ersatzlos).
+// Assembles the complete schematic from Maze + TileSet. Port of
+// maze2schematic/assemble.py, without the bias-map parts (load_bias_map is
+// dropped, bias parameters are dropped with no replacement).
 //
-// Style-Zuweisung: Nicht-Default-Styles (z.B. "slim") werden als
-// zusammenhaengende Cluster entlang des Ganggraphen verteilt, mit
-// konfigurierbarer Min-/Max-Groesse (variants.json -> "clusters"). Der
-// Flaechenanteil je Style richtet sich nach den Gewichten.
+// Style assignment: non-default styles (e.g. "slim") are distributed as
+// connected clusters along the corridor graph, with configurable min/max
+// size (variants.json -> "clusters"). The area share per style follows
+// the weights.
 
 import { classify } from "./classify.js";
 import { N, E, S, W } from "./generate.js";
@@ -24,17 +24,17 @@ function _neighbors(maze, r, c) {
   return out;
 }
 
-/** Zelle ist frei und grenzt (ueber Gaenge) nicht an denselben Style an --
- * sonst wuerden getrennt gewachsene Cluster zu einem groesseren
- * verschmelzen. */
+/** Cell is free and (via corridors) does not border the same style --
+ * otherwise separately grown clusters would merge into one larger
+ * cluster. */
 function _freeFor(maze, grid, cell, style) {
   const [r, c] = cell;
   if (grid[r][c] !== null) return false;
   return _neighbors(maze, r, c).every(([nr, nc]) => grid[nr][nc] !== style);
 }
 
-/** Laesst einen Cluster vom Seed aus entlang der Gaenge auf freien Zellen
- * wachsen, bis `size` erreicht ist oder nichts mehr frei ist. */
+/** Grows a cluster from the seed along the corridors into free cells
+ * until `size` is reached or nothing is free anymore. */
 function _growCluster(maze, grid, seed, size, style, rng) {
   const cluster = new Set([seed.join(",")]);
   const clusterCells = [seed];
@@ -55,11 +55,11 @@ function _growCluster(maze, grid, seed, size, style, rng) {
   return clusterCells;
 }
 
-/** Weist jeder Zelle einen Style zu.
+/** Assigns a style to every cell.
  *
- * Fuer jeden Nicht-Default-Style wird der Zielanteil aus den Gewichten
- * bestimmt und in zusammenhaengenden Clustern (min/max Zellen) platziert.
- * Ohne Cluster-Config gilt min = max = 1 (einzelne Zellen). */
+ * For each non-default style the target share is computed from the
+ * weights and placed in connected clusters (min/max cells). Without a
+ * cluster config, min = max = 1 (single cells) applies. */
 export function assignStyles(maze, tileset, rng) {
   const grid = Array.from({ length: maze.rows }, () => new Array(maze.cols).fill(null));
   const weights = tileset.styleWeights();
@@ -81,7 +81,7 @@ export function assignStyles(maze, tileset, rng) {
       if (!_freeFor(maze, grid, seed, style)) continue;
       const size = rng.randIntRange(cmin, Math.min(cmax, target - placed));
       const cluster = _growCluster(maze, grid, seed, size, style, rng);
-      if (cluster.length < cmin) continue; // eingeklemmt zwischen belegten Zellen: verwerfen
+      if (cluster.length < cmin) continue; // wedged between occupied cells: discard
       for (const [r, c] of cluster) grid[r][c] = style;
       placed += cluster.length;
     }
@@ -95,8 +95,8 @@ export function assignStyles(maze, tileset, rng) {
   return grid;
 }
 
-/** Setzt aus Maze + TileSet ein Blockgitter zusammen, im Format das
- * writeLitematic (litematic.js) konsumiert. */
+/** Assembles a block grid from Maze + TileSet, in the format that
+ * writeLitematic (litematic.js) consumes. */
 export function assembleBlocks(maze, tileset, rng, styles = null) {
   if (styles === null) {
     styles = assignStyles(maze, tileset, rng);
@@ -139,7 +139,7 @@ export function assembleBlocks(maze, tileset, rng, styles = null) {
   return { sizeX, sizeY, sizeZ, palette, blocks };
 }
 
-/** Zaehlt Tile-Typen (ohne Style) ueber das gesamte Maze. */
+/** Counts tile types (ignoring style) across the whole maze. */
 export function tileStats(maze) {
   const counts = {};
   for (const row of maze.masks) {

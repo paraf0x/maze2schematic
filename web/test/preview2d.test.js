@@ -4,11 +4,10 @@ import { N, E, S, W } from "../js/generate.js";
 import { drawMaze, drawTopdown, colorForBlock, BLOCK_COLORS } from "../js/preview2d.js";
 
 // ---------------------------------------------------------------------------
-// Fake-Canvas: kein echtes DOM verfuegbar (Node-Tests), also ein minimaler
-// Stub, der nur das nachbildet, was preview2d.js anfasst: clientWidth/Height
-// (Elterngroesse, die drawMaze/drawTopdown auf canvas.width/height syncen),
-// getContext("2d") liefert einen Fake-Kontext, der alle Zeichenaufrufe
-// mitschreibt.
+// Fake canvas: no real DOM available (Node tests), so a minimal stub that
+// only mimics what preview2d.js touches: clientWidth/Height (parent size,
+// which drawMaze/drawTopdown sync onto canvas.width/height),
+// getContext("2d") returns a fake context that records all draw calls.
 // ---------------------------------------------------------------------------
 
 function fakeCanvas(clientWidth, clientHeight) {
@@ -42,26 +41,26 @@ function fakeCanvas(clientWidth, clientHeight) {
 // colorForBlock / BLOCK_COLORS
 // ---------------------------------------------------------------------------
 
-test("colorForBlock: bekannte Bloecke kommen aus BLOCK_COLORS", () => {
+test("colorForBlock: known blocks come from BLOCK_COLORS", () => {
   assert.equal(colorForBlock("minecraft:stone"), BLOCK_COLORS["minecraft:stone"]);
   assert.equal(colorForBlock("minecraft:oak_log"), BLOCK_COLORS["minecraft:oak_log"]);
   assert.equal(colorForBlock("minecraft:water"), BLOCK_COLORS["minecraft:water"]);
   assert.ok(/^#[0-9a-f]{6}$/i.test(BLOCK_COLORS["minecraft:stone"]));
 });
 
-test("colorForBlock: unbekannte Id ist deterministisch (gleiche Id -> gleiche Farbe)", () => {
+test("colorForBlock: unknown id is deterministic (same id -> same color)", () => {
   const a = colorForBlock("minecraft:some_modded_block_xyz");
   const b = colorForBlock("minecraft:some_modded_block_xyz");
   assert.equal(a, b);
   assert.match(a, /^hsl\(\d+, 55%, 45%\)$/);
 });
 
-test("colorForBlock: unterschiedliche unbekannte Ids ergeben (meist) unterschiedliche Farben", () => {
+test("colorForBlock: different unknown ids yield (mostly) different colors", () => {
   const ids = Array.from({ length: 20 }, (_, i) => `minecraft:fantasy_block_${i}`);
   const colors = new Set(ids.map(colorForBlock));
-  // Hash-Kollisionen bei 20 Werten in 360 Farbtoenen sind unwahrscheinlich,
-  // aber nicht unmoeglich -- wir verlangen nur "ueberwiegend verschieden".
-  assert.ok(colors.size >= 18, `nur ${colors.size} verschiedene Farben unter 20 Ids`);
+  // Hash collisions among 20 values in 360 hues are unlikely, but not
+  // impossible -- we only require "mostly distinct".
+  assert.ok(colors.size >= 18, `only ${colors.size} distinct colors among 20 ids`);
 });
 
 // ---------------------------------------------------------------------------
@@ -70,15 +69,15 @@ test("colorForBlock: unterschiedliche unbekannte Ids ergeben (meist) unterschied
 
 function maskSet(...dirs) { return new Set(dirs); }
 
-// Handgebautes 2x2-Maze (rows=2, cols=2):
+// Hand-built 2x2 maze (rows=2, cols=2):
 //   (0,0) -- (0,1)
 //     |        |
 //   (1,0)    (1,1)
 //
-// (0,0): offen nach E und S (Kanten N, W geschlossen -> 2 Segmente)
-// (0,1): offen nach W und S (Kanten N, E geschlossen -> 2 Segmente)
-// (1,0): offen nach N (Kanten E, S, W geschlossen -> 3 Segmente)
-// (1,1): komplett geschlossen (mask.size === 0 -> 4 Segmente + 1 Fuellung)
+// (0,0): open to E and S (edges N, W closed -> 2 segments)
+// (0,1): open to W and S (edges N, E closed -> 2 segments)
+// (1,0): open to N (edges E, S, W closed -> 3 segments)
+// (1,1): fully closed (mask.size === 0 -> 4 segments + 1 fill)
 function tinyMaze() {
   return {
     rows: 2,
@@ -90,29 +89,29 @@ function tinyMaze() {
   };
 }
 
-test("drawMaze: syncet Canvas-Groesse auf clientWidth/Height", () => {
+test("drawMaze: syncs canvas size to clientWidth/Height", () => {
   const { canvas } = fakeCanvas(200, 100);
   drawMaze(canvas, tinyMaze());
   assert.equal(canvas.width, 200);
   assert.equal(canvas.height, 100);
 });
 
-test("drawMaze: zeichnet die erwartete Anzahl Wandsegmente + Fuellungen", () => {
+test("drawMaze: draws the expected number of wall segments + fills", () => {
   const { canvas, calls } = fakeCanvas(200, 200);
   drawMaze(canvas, tinyMaze());
 
-  // 2 + 2 + 3 + 4 = 11 geschlossene Kanten insgesamt -> je moveTo+lineTo-Paar.
+  // 2 + 2 + 3 + 4 = 11 closed edges total -> one moveTo+lineTo pair each.
   assert.equal(calls.moveTo.length, 11);
   assert.equal(calls.lineTo.length, 11);
-  assert.equal(calls.stroke, 1); // ein gebuendelter stroke()-Aufruf
+  assert.equal(calls.stroke, 1); // one batched stroke() call
 
-  // Genau eine vollstaendig geschlossene Zelle -> genau ein fillRect.
+  // Exactly one fully closed cell -> exactly one fillRect.
   assert.equal(calls.fillRect.length, 1);
   const s = Math.floor(Math.min(200 / 2, 200 / 2)); // = 100
   assert.deepEqual(calls.fillRect[0], { x: 100, y: 100, w: s, h: s, fillStyle: calls.fillRect[0].fillStyle });
 });
 
-test("drawMaze: leeres Maze (0 Zeilen) zeichnet keine Segmente und crasht nicht", () => {
+test("drawMaze: empty maze (0 rows) draws no segments and doesn't crash", () => {
   const { canvas, calls } = fakeCanvas(200, 200);
   drawMaze(canvas, { rows: 0, cols: 0, masks: [] });
   assert.equal(calls.moveTo.length, 0);
@@ -123,8 +122,8 @@ test("drawMaze: leeres Maze (0 Zeilen) zeichnet keine Segmente und crasht nicht"
 // drawTopdown
 // ---------------------------------------------------------------------------
 
-// Handgebaute 2x1x2-Assembly (sizeX=2, sizeY=1, sizeZ=2): eine Luft-Saeule,
-// eine Stein-Saeule, indiziert (y*sizeZ+z)*sizeX+x.
+// Hand-built 2x1x2 assembly (sizeX=2, sizeY=1, sizeZ=2): one air column,
+// one stone column, indexed (y*sizeZ+z)*sizeX+x.
 function tinyAssembly() {
   const palette = [
     { id: "minecraft:air", props: {} },
@@ -132,18 +131,18 @@ function tinyAssembly() {
   ];
   const sizeX = 2, sizeY = 1, sizeZ = 2;
   const blocks = new Uint32Array(sizeX * sizeY * sizeZ);
-  // Saeule (x=0, z=0): Luft (Index 0, Default). Saeule (x=1, z=0): Stein.
+  // Column (x=0, z=0): air (index 0, default). Column (x=1, z=0): stone.
   blocks[(0 * sizeZ + 0) * sizeX + 1] = 1;
-  // Saeule (x=0, z=1): Luft. Saeule (x=1, z=1): Stein.
+  // Column (x=0, z=1): air. Column (x=1, z=1): stone.
   blocks[(0 * sizeZ + 1) * sizeX + 1] = 1;
   return { sizeX, sizeY, sizeZ, palette, blocks };
 }
 
-test("drawTopdown: fuellt nur Nicht-Luft-Saeulen mit der Blockfarbe", () => {
+test("drawTopdown: fills only non-air columns with the block color", () => {
   const { canvas, calls } = fakeCanvas(20, 20);
   drawTopdown(canvas, tinyAssembly());
 
-  // Hintergrund-Fuellung ueber das ganze Canvas + 2 Steinsaeulen (x=1, z=0/1).
+  // Background fill over the whole canvas + 2 stone columns (x=1, z=0/1).
   const stoneColor = colorForBlock("minecraft:stone");
   const stoneFills = calls.fillRect.filter((r) => r.fillStyle === stoneColor);
   assert.equal(stoneFills.length, 2);
@@ -151,16 +150,16 @@ test("drawTopdown: fuellt nur Nicht-Luft-Saeulen mit der Blockfarbe", () => {
   const px = Math.floor(Math.min(20 / 2, 20 / 2)); // = 10
   const xs = stoneFills.map((r) => r.x).sort((a, b) => a - b);
   const zs = stoneFills.map((r) => r.y).sort((a, b) => a - b);
-  assert.deepEqual(xs, [px, px]); // beide bei x=1 -> x*px
-  assert.deepEqual(zs, [0, px]); // z=0 und z=1 -> z*px
+  assert.deepEqual(xs, [px, px]); // both at x=1 -> x*px
+  assert.deepEqual(zs, [0, px]); // z=0 and z=1 -> z*px
 
-  // Keine Fuellung fuer die beiden Luft-Saeulen (x=0) in Stein-Farbe.
+  // No fill in stone color for the two air columns (x=0).
   assert.ok(!calls.fillRect.some((r) => r.x === 0 && r.fillStyle === stoneColor));
 });
 
-test("drawTopdown: leere Assembly (sizeX=0) zeichnet keine Bloecke und crasht nicht", () => {
+test("drawTopdown: empty assembly (sizeX=0) draws no blocks and doesn't crash", () => {
   const { canvas, calls } = fakeCanvas(20, 20);
   drawTopdown(canvas, { sizeX: 0, sizeY: 0, sizeZ: 0, palette: [], blocks: new Uint32Array(0) });
-  // Nur die initiale Hintergrund-Fuellung, keine Block-Rechtecke.
+  // Only the initial background fill, no block rectangles.
   assert.equal(calls.fillRect.length, 1);
 });

@@ -4,7 +4,7 @@ import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { readNbt, writeNbt, tag, TAG } from "../js/nbt.js";
 
-test("Roundtrip eines handgebauten Compounds", () => {
+test("roundtrip of a hand-built compound", () => {
   const root = tag.compound({
     Version: tag.int(6),
     Name: tag.string("maze"),
@@ -25,7 +25,7 @@ test("Roundtrip eines handgebauten Compounds", () => {
   assert.equal(back.value.value.Nested.value.b.value, -1);
 });
 
-test("liest eine echte litemapy-Datei", () => {
+test("reads a real litemapy file", () => {
   const raw = gunzipSync(readFileSync("maze.litematic"));
   const { value: root } = readNbt(new Uint8Array(raw));
   assert.equal(root.value.Version.value, 6);
@@ -34,7 +34,7 @@ test("liest eine echte litemapy-Datei", () => {
   assert.ok(root.value.Regions.value.maze);
 });
 
-test("Byte-identischer Roundtrip der echten Datei", () => {
+test("byte-identical roundtrip of the real file", () => {
   const raw = new Uint8Array(gunzipSync(readFileSync("maze.litematic")));
   const { name, value } = readNbt(raw);
   const out = writeNbt(name, value);

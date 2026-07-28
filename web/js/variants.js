@@ -1,7 +1,8 @@
-// Port von maze2schematic/tiles.py:_load_config (159-207) fuer die Web-Variante.
+// Port of maze2schematic/tiles.py:_load_config (159-207) for the web variant.
 //
-// Unterschied zum Python-Original: das "map"-Feld (Bias-Map je Cluster-Style)
-// wird ignoriert (mit console.warn) -- Bias-Maps sind im Web-Port out of scope.
+// Difference from the Python original: the "map" field (bias map per
+// cluster style) is ignored (with console.warn) -- bias maps are out of
+// scope for the web port.
 
 import { TileError } from "./tiles.js";
 
@@ -22,7 +23,7 @@ export function parseVariantsConfig(json) {
   const weights = {};
   for (const [stem, weight] of Object.entries(rawWeights)) {
     if (typeof weight !== "number" || !Number.isFinite(weight) || weight < 0) {
-      throw new TileError(`variants.json: ungueltiges Gewicht fuer '${stem}': ${JSON.stringify(weight)}`);
+      throw new TileError(`variants.json: invalid weight for '${stem}': ${JSON.stringify(weight)}`);
     }
     weights[stem] = Number(weight);
   }
@@ -32,11 +33,11 @@ export function parseVariantsConfig(json) {
     const minSize = Number.isFinite(Number(cfg?.min)) ? Math.trunc(Number(cfg.min ?? 1)) : 1;
     const maxSize = Number.isFinite(Number(cfg?.max)) ? Math.trunc(Number(cfg.max ?? 1)) : 1;
     if (!(1 <= minSize && minSize <= maxSize)) {
-      throw new TileError(`variants.json: ungueltige Cluster-Groessen fuer '${style}': ${JSON.stringify(cfg)}`);
+      throw new TileError(`variants.json: invalid cluster sizes for '${style}': ${JSON.stringify(cfg)}`);
     }
     if (cfg && cfg.map !== undefined && cfg.map !== null) {
       console.warn(
-        `variants.json: Bias-Map fuer '${style}' wird ignoriert (Bias-Maps sind im Web-Port nicht unterstuetzt).`,
+        `variants.json: bias map for '${style}' is ignored (bias maps are not supported in the web port).`,
       );
     }
     clusters[style] = { minSize, maxSize };

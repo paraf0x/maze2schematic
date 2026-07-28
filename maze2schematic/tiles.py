@@ -1,8 +1,8 @@
-"""Laedt Tile-Schematics (.litematic) und rotiert sie in 90-Grad-Schritten.
+"""Loads tile schematics (.litematic) and rotates them in 90-degree steps.
 
-Ein Tile wird als 3D-Array von BlockStates gehalten, indiziert [x][y][z]
-(Minecraft-Achsen: x = Ost, y = hoch, z = Sued). Norden ist -z; die SVG-Zeile 0
-liegt im fertigen Schematic bei z = 0.
+A tile is held as a 3D array of BlockStates, indexed [x][y][z]
+(Minecraft axes: x = east, y = up, z = south). North is -z; SVG row 0
+sits at z = 0 in the finished schematic.
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ from litemapy import BlockState, Schematic
 
 from .classify import CANONICAL_MASKS
 
-# facing-Werte im Uhrzeigersinn
+# facing values clockwise
 _FACING_CW = {"north": "east", "east": "south", "south": "west", "west": "north"}
 _AXIS_CW = {"x": "z", "z": "x"}
-# Verbindungs-Properties (Zaeune, Glasscheiben, Mauern, Redstone, Vines, ...)
+# Connection properties (fences, glass panes, walls, redstone, vines, ...)
 _SIDE_PROPS = ("north", "east", "south", "west")
 _RAIL_SHAPE_CW = {
     "north_south": "east_west",
@@ -36,7 +36,7 @@ _RAIL_SHAPE_CW = {
 
 
 def rotate_state_cw(state: BlockState) -> BlockState:
-    """Rotiert einen BlockState um 90 Grad im Uhrzeigersinn (von oben gesehen)."""
+    """Rotates a BlockState by 90 degrees clockwise (viewed from above)."""
     props = dict(state.properties())
     if not props:
         return state
@@ -63,7 +63,7 @@ def rotate_state_cw(state: BlockState) -> BlockState:
 @dataclass
 class Tile:
     name: str
-    size: int  # Grundflaeche size x size
+    size: int  # footprint size x size
     height: int
     # blocks[x][y][z]
     blocks: list[list[list[BlockState]]]
@@ -76,7 +76,7 @@ class Tile:
         for x in range(s):
             for y in range(self.height):
                 for z in range(s):
-                    # (x, z) -> (s-1-z, x): Nordkante wandert zur Ostkante
+                    # (x, z) -> (s-1-z, x): north edge moves to the east edge
                     new_blocks[s - 1 - z][y][x] = rotate_state_cw(self.blocks[x][y][z])
         return Tile(self.name, s, self.height, new_blocks)
 
@@ -89,12 +89,12 @@ def _load_tile(path: str, name: str) -> Tile:
     schem = Schematic.load(path)
     regions = list(schem.regions.values())
     if len(regions) != 1:
-        raise TileLoadError(f"{path}: erwartet genau 1 Region, gefunden {len(regions)}.")
+        raise TileLoadError(f"{path}: expected exactly 1 region, found {len(regions)}.")
     region = regions[0]
     if region.tile_entities:
         print(
-            f"Warnung: {path} enthaelt {len(region.tile_entities)} Tile-Entities "
-            "(Kisten, Schilder, ...); diese werden ignoriert.",
+            f"Warning: {path} contains {len(region.tile_entities)} tile entities "
+            "(chests, signs, ...); these are ignored.",
             file=sys.stderr,
         )
 
@@ -102,7 +102,7 @@ def _load_tile(path: str, name: str) -> Tile:
     sy = abs(region.height)
     sz = abs(region.length)
     if sx != sz:
-        raise TileLoadError(f"{path}: Grundflaeche muss quadratisch sein, ist {sx}x{sz}.")
+        raise TileLoadError(f"{path}: footprint must be square, is {sx}x{sz}.")
 
     xs = sorted(region.range_x())
     ys = sorted(region.range_y())
@@ -113,7 +113,7 @@ def _load_tile(path: str, name: str) -> Tile:
     return Tile(name=name, size=sx, height=sy, blocks=blocks)
 
 
-# Alternative Dateinamen je kanonischem Tile-Namen (presets/-Struktur)
+# Alternate filenames per canonical tile name (presets/ structure)
 _ALIASES = {
     "dead_end": ("dead_end", "deadend"),
     "straight": ("straight",),
@@ -128,11 +128,11 @@ DEFAULT_STYLE = ""
 
 
 def _find_tile_files(tiles_dir: str, canonical: str) -> tuple[str, list[str]]:
-    """Sucht die Datei(en) fuer einen Tile-Typ; liefert (alias, Pfade).
+    """Finds the file(s) for a tile type; returns (alias, paths).
 
-    Unterstuetzt zwei Layouts:
-    - flach:       <dir>/<name>.litematic (eine Variante)
-    - Unterordner: <dir>/<name>/*.litematic (jede Datei ist eine Variante)
+    Supports two layouts:
+    - flat:      <dir>/<name>.litematic (one variant)
+    - subfolder: <dir>/<name>/*.litematic (each file is a variant)
     """
     for alias in _ALIASES[canonical]:
         flat = os.path.join(tiles_dir, f"{alias}.litematic")
@@ -147,8 +147,8 @@ def _find_tile_files(tiles_dir: str, canonical: str) -> tuple[str, list[str]]:
 
 
 def _style_of(stem: str, alias: str) -> str:
-    """Style einer Variante aus dem Dateinamen: '<alias>' -> Default-Style,
-    '<alias>_<style>' -> '<style>', sonst der komplette Dateiname."""
+    """Style of a variant derived from the filename: '<alias>' -> default
+    style, '<alias>_<style>' -> '<style>', otherwise the full filename."""
     if stem == alias:
         return DEFAULT_STYLE
     if stem.startswith(alias + "_"):
@@ -160,20 +160,20 @@ def _style_of(stem: str, alias: str) -> str:
 class ClusterConfig:
     min_size: int = 1
     max_size: int = 1
-    # Pfad zu einer Bias-Map (Textraster, eine Ziffer pro Zelle), optional
+    # Path to a bias map (text grid, one digit per cell), optional
     map_path: str | None = None
 
 
 def _load_config(tiles_dir: str) -> tuple[dict[str, float], dict[str, ClusterConfig]]:
-    """Laedt variants.json: (Gewichte je Datei-Stem, Cluster-Config je Style).
+    """Loads variants.json: (weights per file stem, cluster config per style).
 
-    Neues Format:
+    New format:
         {"weights": {"straight_slim": 1, ...},
          "clusters": {"slim": {"min": 3, "max": 8, "map": "slim_map.txt"}}}
-    Altes Format (nur Gewichte, flach) wird weiterhin akzeptiert.
+    Old format (weights only, flat) is still accepted.
 
-    Nicht aufgefuehrte Varianten bekommen Gewicht 1, Gewicht 0 schliesst
-    eine Variante aus. "map" ist relativ zum Tiles-Ordner.
+    Variants not listed get weight 1, weight 0 excludes a variant.
+    "map" is relative to the tiles folder.
     """
     path = os.path.join(tiles_dir, "variants.json")
     if not os.path.isfile(path):
@@ -190,25 +190,25 @@ def _load_config(tiles_dir: str) -> tuple[dict[str, float], dict[str, ClusterCon
     weights = {}
     for stem, weight in raw_weights.items():
         if not isinstance(weight, (int, float)) or weight < 0:
-            raise TileLoadError(f"variants.json: ungueltiges Gewicht fuer '{stem}': {weight!r}")
+            raise TileLoadError(f"variants.json: invalid weight for '{stem}': {weight!r}")
         weights[stem] = float(weight)
 
     clusters = {}
     for style, cfg in raw_clusters.items():
         cmin, cmax = int(cfg.get("min", 1)), int(cfg.get("max", 1))
         if not 1 <= cmin <= cmax:
-            raise TileLoadError(f"variants.json: ungueltige Cluster-Groessen fuer '{style}': {cfg!r}")
+            raise TileLoadError(f"variants.json: invalid cluster sizes for '{style}': {cfg!r}")
         map_path = cfg.get("map")
         if map_path is not None:
             map_path = os.path.join(tiles_dir, map_path)
             if not os.path.isfile(map_path):
-                raise TileLoadError(f"variants.json: Bias-Map nicht gefunden: {map_path}")
+                raise TileLoadError(f"variants.json: bias map not found: {map_path}")
         clusters[style] = ClusterConfig(cmin, cmax, map_path)
     return weights, clusters
 
 
 class TileSet:
-    """Alle Tile-Typen inkl. Style-Varianten, Gewichten und gecachten Rotationen."""
+    """All tile types including style variants, weights, and cached rotations."""
 
     REQUIRED = ("dead_end", "straight", "turn", "tee", "cross")
 
@@ -217,14 +217,14 @@ class TileSet:
         variants: dict[str, dict[str, tuple[Tile, float]]],
         clusters: dict[str, ClusterConfig],
     ):
-        # variants[kanonischer Name][style] = (Tile, Gewicht)
+        # variants[canonical name][style] = (Tile, weight)
         self.variants = variants
-        # clusters[style] = ClusterConfig (min/max Zellen, optionale Bias-Map)
+        # clusters[style] = ClusterConfig (min/max cells, optional bias map)
         self.clusters = clusters
         first = next(iter(next(iter(variants.values())).values()))[0]
         self.size = first.size
         self.height = first.height
-        # cache[(kanonischer Name, style, Rotation)] -> Tile
+        # cache[(canonical name, style, rotation)] -> Tile
         self._cache: dict[tuple[str, str, int], Tile] = {}
 
     @classmethod
@@ -242,26 +242,26 @@ class TileSet:
             if entries:
                 if DEFAULT_STYLE not in entries:
                     raise TileLoadError(
-                        f"{tiles_dir}/{alias}: Basis-Variante '{alias}.litematic' fehlt "
-                        "oder hat Gewicht 0."
+                        f"{tiles_dir}/{alias}: base variant '{alias}.litematic' is missing "
+                        "or has weight 0."
                     )
                 variants[name] = entries
 
         missing = [n for n in cls.REQUIRED if n not in variants]
         if missing:
             raise TileLoadError(
-                f"Fehlende Tiles in {tiles_dir}: " + ", ".join(missing)
+                f"Missing tiles in {tiles_dir}: " + ", ".join(missing)
             )
 
         all_tiles = [t for entries in variants.values() for t, _ in entries.values()]
         sizes = {(t.size, t.height) for t in all_tiles}
         if len(sizes) != 1:
             detail = ", ".join(f"{t.name}={t.size}x{t.height}x{t.size}" for t in all_tiles)
-            raise TileLoadError(f"Alle Tiles muessen gleich gross sein: {detail}")
+            raise TileLoadError(f"All tiles must be the same size: {detail}")
         return cls(variants, clusters)
 
     def style_weights(self) -> dict[str, float]:
-        """Durchschnittliches Gewicht je Style ueber alle Tile-Typen."""
+        """Average weight per style across all tile types."""
         sums: dict[str, list[float]] = {}
         for entries in self.variants.values():
             for style, (_, weight) in entries.items():
@@ -277,8 +277,8 @@ class TileSet:
         return "\n".join(lines)
 
     def get(self, name: str, rotation: int, style: str = DEFAULT_STYLE) -> Tile:
-        """Tile fuer Typ + Rotation + Style; unbekannter Style faellt auf den
-        Default zurueck (z.B. wenn ein Typ keine slim-Variante hat)."""
+        """Tile for type + rotation + style; an unknown style falls back to the
+        default (e.g. when a type has no slim variant)."""
         entries = self.variants[name]
         if style not in entries:
             style = DEFAULT_STYLE

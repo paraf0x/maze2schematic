@@ -18,7 +18,7 @@ function tileset() {
   return TileSet.fromEntries(entries, parseVariantsConfig(JSON.parse(readFileSync("presets/variants.json", "utf8"))));
 }
 
-test("assignStyles: jede Zelle hat einen Style, slim-Anteil grob nach Gewicht", () => {
+test("assignStyles: every cell has a style, slim share roughly follows weight", () => {
   const ts = tileset();
   const maze = generateMaze(defaultOptions(), makeRng(1));
   const grid = assignStyles(maze, ts, makeRng(1));
@@ -28,10 +28,10 @@ test("assignStyles: jede Zelle hat einen Style, slim-Anteil grob nach Gewicht", 
   assert.equal(total, maze.rows * maze.cols);
   const weights = ts.styleWeights();
   const expected = weights.slim / (weights.slim + weights[""]);
-  assert.ok(Math.abs(slim / total - expected) < 0.2, `slim-Anteil ${slim / total} vs ${expected}`);
+  assert.ok(Math.abs(slim / total - expected) < 0.2, `slim share ${slim / total} vs ${expected}`);
 });
 
-test("assignStyles: slim-Cluster sind zusammenhaengend und in min/max", () => {
+test("assignStyles: slim clusters are connected and within min/max", () => {
   const ts = tileset();
   const maze = generateMaze(defaultOptions(), makeRng(2));
   const grid = assignStyles(maze, ts, makeRng(2));
@@ -39,7 +39,7 @@ test("assignStyles: slim-Cluster sind zusammenhaengend und in min/max", () => {
   const seen = new Set();
   for (let r = 0; r < maze.rows; r++) for (let c = 0; c < maze.cols; c++) {
     if (grid[r][c] !== "slim" || seen.has(r + "," + c)) continue;
-    // Flood-Fill entlang der Gaenge (Cluster wachsen nur ueber offene Kanten)
+    // Flood fill along the corridors (clusters only grow over open edges)
     const cluster = [];
     const stack = [[r, c]];
     while (stack.length) {
@@ -55,11 +55,11 @@ test("assignStyles: slim-Cluster sind zusammenhaengend und in min/max", () => {
       }
     }
     assert.ok(cluster.length >= minSize && cluster.length <= maxSize,
-      `Cluster bei ${r},${c}: ${cluster.length} nicht in [${minSize},${maxSize}]`);
+      `Cluster at ${r},${c}: ${cluster.length} not in [${minSize},${maxSize}]`);
   }
 });
 
-test("assembleBlocks: Groesse, Palette, Determinismus", () => {
+test("assembleBlocks: size, palette, determinism", () => {
   const ts = tileset();
   const maze = generateMaze(defaultOptions(), makeRng(3));
   const a = assembleBlocks(maze, ts, makeRng(3));

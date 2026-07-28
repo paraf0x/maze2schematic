@@ -1,25 +1,25 @@
-// Labyrinth-Generator, portiert von jsmaze (Dungeon Maze Generator).
+// Maze generator, ported from jsmaze (Dungeon Maze Generator).
 //
 // Original: Morgan McGuire, @CasualEffects, https://casual-effects.com
-// https://morgan3d.github.io/misc/jsmaze/ (BSD-Lizenz)
+// https://morgan3d.github.io/misc/jsmaze/ (BSD license)
 //
-// Der Generator arbeitet auf einem Blockraster: EMPTY (0) = Gang,
-// SOLID (255) = Wand. Zellen liegen auf ungeraden Indizes, Waende dazwischen.
-// Hall-/Wall-Size aus dem Original entfaellt hier -- die Geometrie kommt
-// aus den Litematica-Tiles. Das Ergebnis wird in das Zellmasken-Modell
-// (`Maze`) konvertiert und laeuft durch die normale Tile-Pipeline.
+// The generator works on a block grid: EMPTY (0) = corridor,
+// SOLID (255) = wall. Cells sit at odd indices, walls in between.
+// The hall/wall size from the original is dropped here -- the geometry
+// comes from the Litematica tiles. The result is converted into the
+// cell-mask model (`Maze`) and runs through the normal tile pipeline.
 //
-// Rueckportierung von maze2schematic/generate.py (das seinerseits von
-// jsmaze/JS nach Python portiert wurde). Funktionsstruktur, Variablennamen
-// und (deutsche) Kommentare bewusst beibehalten, damit dieser Code gegen
-// generate.py diffbar bleibt.
+// Back-port of maze2schematic/generate.py (which was itself ported from
+// jsmaze/JS to Python). Function structure, variable names, and comments
+// are deliberately kept in sync so this code stays diffable against
+// generate.py.
 
-// Richtungen, im Uhrzeigersinn (wichtig fuer die Rotationslogik)
+// Directions, clockwise (important for the rotation logic)
 export const N = 0, E = 1, S = 2, W = 3;
 
 export const SOLID = 255, RESERVED = 127, EMPTY = 0;
 
-// Presets von der jsmaze-Website (Hall-/Wall-Size entfaellt):
+// Presets from the jsmaze website (hall/wall size is dropped):
 // {hloop, vloop, hborder, vborder, hmirror, vmirror, shortcuts, straightness, coverage, rooms}
 export const DUNGEON_PRESETS = {
   labyrinth: { hloop: false, vloop: false, hborder: 1, vborder: 1, hmirror: false, vmirror: false, shortcuts: 0.00, straightness: 0.00, coverage: 1.00, rooms: 0.00 },
@@ -64,12 +64,12 @@ export function presetOptions(name, cols, rows) {
   };
 }
 
-// Direkte Portierung von makeMaze() aus jsmaze (hall/wall = 1).
+// Direct port of makeMaze() from jsmaze (hall/wall = 1).
 function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, deadEnds, rng) {
   const hSymmetry = horizontal.mirror;
   const hBorder = horizontal.border;
-  // Wrapping ignorieren, ausser Border und Symmetrie sind gesetzt; dann ohne
-  // Wrapping generieren und Loecher in den Rand stanzen
+  // Ignore wrapping unless border and symmetry are both set; in that case
+  // generate without wrapping and punch holes into the border
   const hWrap = horizontal.loop && !(hSymmetry && hBorder);
 
   const vSymmetry = vertical.mirror;
@@ -87,7 +87,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     }
   }
 
-  // Raender, die spaeter entfernt werden, vorab ausgleichen
+  // Pre-compensate for borders that will be removed later
   if (!hBorder) {
     w += 1;
     if (!hWrap) {
@@ -124,7 +124,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     h += ~(h & 1);
   }
 
-  // maze ist spaltenweise indiziert: maze[x][y]
+  // maze is indexed column-wise: maze[x][y]
   const maze = Array.from({ length: w }, () => new Array(h).fill(SOLID));
 
   if (reserveProb > 0) {
@@ -137,15 +137,15 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     }
   }
 
-  // Gaenge ausgraben (DFS), Start in der Mitte
+  // Carve corridors (DFS), starting in the middle
   const startStep = [0, 0];
-  // Richtungen als konstante Array-Referenzen: step ist immer eine dieser
-  // Referenzen (oder startStep); shuffle vertauscht nur Referenzen im Array.
+  // Directions as constant array references: step is always one of these
+  // references (or startStep); shuffle only swaps references within the array.
   const directions = [[-1, 0], [1, 0], [0, 1], [0, -1]];
   const stack = [[Math.floor(w / 4) * 2 - 1, Math.floor(h / 4) * 2 - 1, startStep]];
   deadEnds.push([stack[0][0], stack[0][1]]);
 
-  // Reservierte Zellen erst beruecksichtigen, wenn ein Mindestpfad existiert
+  // Only consider reserved cells once a minimum path exists
   let ignoreReserved = Math.max(w, h);
 
   function unexplored(x, y) {
@@ -179,14 +179,14 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
       continue;
     }
     setCell(cx, cy, EMPTY);
-    // Wand Richtung Ursprung ebenfalls oeffnen
+    // Also open the wall toward the origin
     setCell(cx - step[0], cy - step[1], EMPTY);
     ignoreReserved -= 1;
 
     shuffle(directions);
 
-    // Geradeaus bevorzugen: den letzten Schritt ans Ende sortieren
-    // (der Stack ist LIFO, das letzte Element wird zuerst verarbeitet)
+    // Prefer straight ahead: sort the last step to the end
+    // (the stack is LIFO, the last element is processed first)
     if (rng.random() < straightness) {
       for (let i = 0; i < 4; i++) {
         if (directions[i] === step) {
@@ -243,7 +243,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
       );
     }
 
-    // Einzelne Wand-Inseln wieder anbinden
+    // Reconnect isolated wall islands
     for (let y = 0; y < h; y += 2) {
       for (let x = 0; x < w; x += 2) {
         const a = maze[x][(y + 1) % h];
@@ -258,7 +258,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     }
   }
 
-  // Reservierungen aufheben
+  // Clear reservations
   if (reserveProb > 0) {
     for (let x = 1; x < w; x += 2) {
       for (let y = 1; y < h; y += 2) {
@@ -289,7 +289,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     }
   }
 
-  // Horizontale Raender
+  // Horizontal borders
   if (!hWrap && !hBorder) {
     maze.shift();
     maze.pop();
@@ -297,7 +297,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
       de[0] -= 1;
     }
   } else if (hBorder && hWrap && !hSymmetry) {
-    // Linke Kante rechts duplizieren
+    // Duplicate the left edge on the right
     maze.push([...maze[0]]);
     for (const de of [...deadEnds]) {
       if (de[0] === 0) {
@@ -312,7 +312,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     }
   }
 
-  // Vertikale Raender
+  // Vertical borders
   if (vBorder && vWrap && !vSymmetry) {
     for (const col of maze) {
       col.push(col[0]);
@@ -340,7 +340,7 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
     }
   }
 
-  // Sackgassen ausserhalb des Rasters entfernen
+  // Remove dead ends outside the grid
   const filtered = deadEnds.filter((de) => de[0] >= 0 && de[1] >= 0);
   deadEnds.length = 0;
   deadEnds.push(...filtered);
@@ -348,12 +348,12 @@ function _makeMaze(w, h, horizontal, vertical, straightness, imperfect, fill, de
   return maze;
 }
 
-// Portierung von addMapRooms() aus jsmaze (hall/wall = 1).
+// Port of addMapRooms() from jsmaze (hall/wall = 1).
 function _addRooms(lattice, horizontal, vertical, deadEnds, roomsFraction) {
   const w = lattice.length, h = lattice[0].length;
   roomsFraction = Math.max(0.0, Math.min(1.0, roomsFraction));
 
-  // Raumgroesse (im Original abhaengig von hall+wall = 2)
+  // Room size (depends on hall+wall = 2 in the original)
   const a = Math.ceil((0.6 * 2) / Math.max(roomsFraction, 0.4));
   const b = a;
 
@@ -370,7 +370,7 @@ function _addRooms(lattice, horizontal, vertical, deadEnds, roomsFraction) {
     }
   }
 
-  // Symmetrie wiederherstellen
+  // Restore symmetry
   if (horizontal.mirror) {
     const offset = horizontal.loop ? 2 : 1;
     for (let y = 0; y < h; y++) {
@@ -389,12 +389,12 @@ function _addRooms(lattice, horizontal, vertical, deadEnds, roomsFraction) {
   }
 }
 
-// Konvertiert das Blockraster in Zellmasken.
+// Converts the block grid into cell masks.
 //
-// Zellen liegen bei Index `1 - phase + 2k`. Nicht ausgegrabene Zellen
-// (SOLID) bekommen eine leere Maske (-> closed-Tile). Raum-Ausgrabungen auf
-// Wandpfosten (gerade/gerade) koennen Tiles nicht abbilden; die Pfosten der
-// Tiles bleiben dann als Saeulen stehen.
+// Cells sit at index `1 - phase + 2k`. Cells that weren't carved (SOLID)
+// get an empty mask (-> closed tile). Room carve-outs on wall posts
+// (even/even) can't be represented by tiles; the tiles' posts then remain
+// standing as pillars.
 function _latticeToMaze(lattice, xPhase, yPhase) {
   const lw = lattice.length, lh = lattice[0].length;
   const xs = [];
@@ -417,10 +417,10 @@ function _latticeToMaze(lattice, xPhase, yPhase) {
         if (!(wx >= 0 && wx < lw && wy >= 0 && wy < lh) || lattice[wx][wy] !== EMPTY) {
           continue;
         }
-        // Kante nur oeffnen, wenn auch die Nachbarzelle ausgegraben ist.
-        // (Bei coverage < 1 kann das Original Wandnischen erzeugen, die
-        // das Tile-Modell nicht abbilden kann.) Nachbarn ausserhalb des
-        // Rasters (Loop-/Randoeffnungen) zaehlen als offen.
+        // Only open an edge if the neighboring cell was also carved.
+        // (At coverage < 1 the original can produce wall recesses that
+        // the tile model can't represent.) Neighbors outside the grid
+        // (loop/border openings) count as open.
         const nx = lx + 2 * dx, ny = ly + 2 * dy;
         if (nx >= 0 && nx < lw && ny >= 0 && ny < lh && lattice[nx][ny] !== EMPTY) {
           continue;
@@ -432,10 +432,10 @@ function _latticeToMaze(lattice, xPhase, yPhase) {
   return { rows, cols, masks };
 }
 
-// Erzeugt ein Labyrinth mit dem jsmaze-Algorithmus als Zellmasken-Maze.
+// Generates a maze with the jsmaze algorithm as a cell-mask maze.
 export function generateMaze(opts, rng) {
-  // Ziel: bei Border + ohne Wrap exakt cols x rows Zellen. makeMaze macht aus
-  // geradem w per `w += ~(w & 1)` genau w-1 (ungerade) -> 2*cols+2 einspeisen.
+  // Goal: with border + no wrap, exactly cols x rows cells. makeMaze turns
+  // an even w into exactly w-1 (odd) via `w += ~(w & 1)` -> feed in 2*cols+2.
   const deadEnds = [];
   const lattice = _makeMaze(
     2 * opts.cols + 2,
@@ -459,7 +459,7 @@ export function generateMaze(opts, rng) {
   const yPhase = (!opts.vertical.border && !vWrap) ? 1 : 0;
   const maze = _latticeToMaze(lattice, xPhase, yPhase);
 
-  // Ein-/Ausgang oben/unten in den Rand stanzen (nur wenn der Rand zu ist)
+  // Punch an entrance/exit into the top/bottom border (only if the border is closed)
   if (opts.entrances && opts.vertical.border && !vWrap) {
     const top = [];
     for (let c = 0; c < maze.cols; c++) if (maze.masks[0][c].size) top.push(c);

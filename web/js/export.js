@@ -17,6 +17,6 @@ export function downloadBlob(bytes, filename) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Sofortiges Revoke kann den laufenden Download in Safari/Firefox abbrechen.
+  // Revoking immediately can cancel the in-progress download in Safari/Firefox.
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }

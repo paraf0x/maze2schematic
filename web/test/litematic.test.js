@@ -6,22 +6,22 @@ import { parseLitematic, writeLitematic, stateKey, AIR } from "../js/litematic.j
 
 const load = (p) => parseLitematic(new Uint8Array(gunzipSync(readFileSync(p))));
 
-test("liest ein echtes Preset-Tile", () => {
+test("reads a real preset tile", () => {
   const doc = load("presets/straight/straight.litematic");
   assert.equal(doc.regions.length, 1);
   const r = doc.regions[0];
-  assert.equal(r.sizeX, r.sizeZ); // Tiles sind quadratisch
+  assert.equal(r.sizeX, r.sizeZ); // tiles are square
   const corner = r.get(0, 0, 0);
   assert.ok(typeof corner.id === "string" && corner.id.startsWith("minecraft:"));
 });
 
-test("liest das grosse maze.litematic und findet Luft + Stein", () => {
+test("reads the large maze.litematic and finds air + stone", () => {
   const r = load("maze.litematic").regions[0];
   assert.equal(r.sizeX, 100);
   assert.equal(r.sizeY, 3);
   const ids = new Set();
   for (let x = 0; x < 10; x++) for (let z = 0; z < 10; z++) ids.add(r.get(x, 1, z).id);
-  assert.ok(ids.size >= 2); // mindestens Luft + Wandmaterial
+  assert.ok(ids.size >= 2); // at least air + wall material
 });
 
 test("write -> parse Roundtrip", () => {
@@ -30,8 +30,8 @@ test("write -> parse Roundtrip", () => {
   const palette = [AIR, stone, stairs];
   const [sx, sy, sz] = [3, 2, 3];
   const blocks = new Uint32Array(sx * sy * sz);
-  blocks[(0 * sz + 0) * sx + 0] = 1;            // (0,0,0) Stein
-  blocks[(1 * sz + 2) * sx + 2] = 2;            // (2,1,2) Treppe
+  blocks[(0 * sz + 0) * sx + 0] = 1;            // (0,0,0) stone
+  blocks[(1 * sz + 2) * sx + 2] = 2;            // (2,1,2) stairs
   const bytes = writeLitematic({
     name: "t", author: "test", sizeX: sx, sizeY: sy, sizeZ: sz,
     palette, blocks, timestamp: 1785228778445,
@@ -44,10 +44,10 @@ test("write -> parse Roundtrip", () => {
   assert.deepEqual(r.get(1, 0, 1), AIR);
 });
 
-test("Palette > 4 Eintraege erzwingt mehr Bits (Spill ueber Long-Grenzen)", () => {
+test("palette > 4 entries forces more bits (spill across long boundaries)", () => {
   const palette = [AIR];
   for (let i = 1; i <= 20; i++) palette.push({ id: `minecraft:b${i}`, props: {} });
-  const [sx, sy, sz] = [7, 3, 5]; // 105 Eintraege * 5 bits = 525 bits, spannt Longs
+  const [sx, sy, sz] = [7, 3, 5]; // 105 entries * 5 bits = 525 bits, spans longs
   const blocks = new Uint32Array(sx * sy * sz).map((_, i) => i % 21);
   const doc = parseLitematic(writeLitematic({
     name: "p", author: "t", sizeX: sx, sizeY: sy, sizeZ: sz,
@@ -56,7 +56,7 @@ test("Palette > 4 Eintraege erzwingt mehr Bits (Spill ueber Long-Grenzen)", () =
   const r = doc.regions[0];
   let i = 0;
   for (let y = 0; y < sy; y++) for (let z = 0; z < sz; z++) for (let x = 0; x < sx; x++) {
-    assert.equal(stateKey(r.get(x, y, z)), stateKey(palette[i % 21]), `Index ${i}`);
+    assert.equal(stateKey(r.get(x, y, z)), stateKey(palette[i % 21]), `index ${i}`);
     i++;
   }
 });

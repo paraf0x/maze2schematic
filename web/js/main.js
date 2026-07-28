@@ -1,18 +1,18 @@
-// UI-Verdrahtung, State, Re-Render-Trigger. Port-unabhaengig: haelt keine
-// Portierungs-Logik selbst, sondern ruft nur die Kern-Module (Tasks 1-8) und
-// die Preset-Assets (Task 9) auf.
+// UI wiring, state, re-render triggers. Port-independent: holds no porting
+// logic itself, just calls the core modules (tasks 1-8) and the preset
+// assets (task 9).
 //
-// Task 12 (`preview3d.js`): der WebGL-Renderer wird lazy beim ersten
-// Aktivieren des 3D-Tabs erzeugt (`setActive`), damit vorher kein WebGL-
-// Kontext existiert. `updateScene` wird bei jedem "assembly-changed" (auch
-// wenn der 3D-Tab inaktiv ist) aufgerufen -- solange die Szene noch nicht
-// initialisiert ist, merkt sich preview3d.js das Assembly und holt es beim
-// naechsten Aktivieren nach.
+// Task 12 (`preview3d.js`): the WebGL renderer is created lazily the first
+// time the 3D tab is activated (`setActive`), so no WebGL context exists
+// before that. `updateScene` is called on every "assembly-changed" (even
+// while the 3D tab is inactive) -- as long as the scene isn't initialized
+// yet, preview3d.js remembers the assembly and picks it up on the next
+// activation.
 //
-// main.js exportiert nichts. Alle DOM-Verdrahtung steckt in `init()`, das erst
-// bei DOMContentLoaded (bzw. sofort, falls das Dokument schon bereit ist)
-// laeuft -- so bleibt das Modul in Node importierbar (kein `document` zur
-// Modul-Ladezeit noetig).
+// main.js exports nothing. All DOM wiring lives in `init()`, which only
+// runs on DOMContentLoaded (or immediately if the document is already
+// ready) -- this keeps the module importable in Node (no `document` needed
+// at module load time).
 
 import { makeRng } from "./rng.js";
 import { defaultOptions, presetOptions, generateMaze } from "./generate.js";
@@ -33,10 +33,10 @@ function clampInt(value, lo, hi, fallback) {
   return Math.min(hi, Math.max(lo, n));
 }
 
-/** Stems (Dateiname ohne ".litematic") pro Pflicht-Typ, die dessen
- * Basis-Variante liefern wuerden -- unabhaengige, leichtgewichtige Spiegelung
- * der Alias-Logik aus tiles.js, nur um dem Nutzer VOR einem (evtl. teuren)
- * TileSet.fromEntries-Versuch anzuzeigen, welche Typen noch fehlen. */
+/** Stems (filename without ".litematic") per required type that would
+ * supply its base variant -- an independent, lightweight mirror of the
+ * alias logic in tiles.js, just to show the user which types are still
+ * missing BEFORE a (potentially expensive) TileSet.fromEntries attempt. */
 function missingRequiredTypes(entries) {
   const stems = new Set(entries.map(({ filename }) => filename.replace(/\.litematic$/i, "")));
   return REQUIRED.filter((canonical) => !ALIASES[canonical].some((alias) => stems.has(alias)));
@@ -85,7 +85,7 @@ function init() {
   window.appState = state;
 
   // ---------------------------------------------------------------------
-  // Meldungen
+  // Messages
   // ---------------------------------------------------------------------
 
   function addMessage(text, level = "error") {
@@ -96,15 +96,15 @@ function init() {
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
     closeBtn.className = "msg-close";
-    closeBtn.setAttribute("aria-label", "Schließen");
+    closeBtn.setAttribute("aria-label", "Close");
     closeBtn.textContent = "×";
     closeBtn.addEventListener("click", () => li.remove());
     li.append(span, closeBtn);
-    els.messages.prepend(li); // neueste oben
+    els.messages.prepend(li); // newest on top
   }
 
   // ---------------------------------------------------------------------
-  // Formular <-> GenerateOptions
+  // Form <-> GenerateOptions
   // ---------------------------------------------------------------------
 
   function optionsFromForm() {
@@ -154,19 +154,19 @@ function init() {
   }
 
   // ---------------------------------------------------------------------
-  // Render-Pipeline: synchrone Maze-Generierung, debounced Assembly
+  // Render pipeline: synchronous maze generation, debounced assembly
   // ---------------------------------------------------------------------
 
   let assemblyTimer = null;
 
-  // Absichtliche Abweichung vom Python __main__.py: dort teilen sich Maze-
-  // Generierung und Assembly eine einzige Random-Instanz, hier bekommt jede
-  // Phase ihr eigenes frisches makeRng(seed). Grund: das Assembly laeuft
-  // gedebounced (scheduleAssembly) und muss bei jedem Trigger deterministisch
-  // aus dem aktuellen Seed neu aufgebaut werden koennen, ohne dass vorherige
-  // Aufrufe (z.B. die synchrone Maze-Generierung in render()) den RNG-Zustand
-  // "verbraucht" haben. Reproduzierbarkeit je Plattform bleibt erhalten, da
-  // jede Phase deterministisch vom selben Seed ausgeht.
+  // Deliberate deviation from the Python __main__.py: there, maze
+  // generation and assembly share a single Random instance; here each
+  // phase gets its own fresh makeRng(seed). Reason: the assembly runs
+  // debounced (scheduleAssembly) and must be rebuilt deterministically
+  // from the current seed on every trigger, without previous calls (e.g.
+  // the synchronous maze generation in render()) having "consumed" the
+  // RNG state. Reproducibility per platform is preserved since each phase
+  // deterministically starts from the same seed.
   function scheduleAssembly() {
     if (assemblyTimer) {
       clearTimeout(assemblyTimer);
@@ -177,7 +177,7 @@ function init() {
       try {
         state.assembly = assembleBlocks(state.maze, state.tileset, makeRng(seedValue()));
       } catch (err) {
-        addMessage(`Zusammenbau fehlgeschlagen: ${err.message}`, "error");
+        addMessage(`Assembly failed: ${err.message}`, "error");
         return;
       }
       document.dispatchEvent(new CustomEvent("assembly-changed", { detail: state }));
@@ -187,11 +187,11 @@ function init() {
   function render() {
     state.options = optionsFromForm();
     try {
-      // Eigenes makeRng(seed) statt geteilter Random-Instanz -- s. Kommentar
-      // bei scheduleAssembly() oben.
+      // Own makeRng(seed) instead of a shared Random instance -- see the
+      // comment on scheduleAssembly() above.
       state.maze = generateMaze(state.options, makeRng(seedValue()));
     } catch (err) {
-      addMessage(`Labyrinth-Generierung fehlgeschlagen: ${err.message}`, "error");
+      addMessage(`Maze generation failed: ${err.message}`, "error");
       return;
     }
     document.dispatchEvent(new CustomEvent("maze-changed", { detail: state }));
@@ -199,10 +199,10 @@ function init() {
   }
 
   // ---------------------------------------------------------------------
-  // 2D-Vorschauen (Task 11): Maze-Ansicht direkt bei jedem Maze, Top-Down
-  // gedebounct zusammen mit dem Assembly. Zusaetzlich beim Tab-Wechsel neu
-  // gezeichnet, da eine zuvor versteckte (`display: none`) Canvas beim
-  // vorherigen Event noch die Groesse 0 hatte.
+  // 2D previews (task 11): maze view redraws directly on every maze,
+  // top-down is debounced together with the assembly. Also redrawn on tab
+  // switch, since a previously hidden (`display: none`) canvas still had
+  // size 0 at the last event.
   // ---------------------------------------------------------------------
 
   document.addEventListener("maze-changed", (ev) => {
@@ -214,11 +214,11 @@ function init() {
   });
 
   // ---------------------------------------------------------------------
-  // Parameter-Eingaben verdrahten
+  // Wire up parameter inputs
   // ---------------------------------------------------------------------
 
-  // Diese 10 Inputs entsprechen genau den Feldern eines DUNGEON_PRESETS-Eintrags;
-  // eine manuelle Aenderung stellt #dungeon auf "custom" (Spec).
+  // These 10 inputs correspond exactly to the fields of a DUNGEON_PRESETS
+  // entry; a manual change sets #dungeon to "custom" (spec).
   const presetControlled = [
     els.straightness, els.shortcuts, els.coverage, els.rooms,
     els.hLoop, els.vLoop, els.hMirror, els.vMirror, els.hBorder, els.vBorder,
@@ -259,16 +259,16 @@ function init() {
       tabPanels[key].style.display = key === which ? "" : "none";
       tabButtons[key].classList.toggle("active", key === which);
     }
-    // Neu zeichnen: eine Canvas, die vorher "display: none" war, hatte beim
-    // letzten "maze-changed"/"assembly-changed"-Event clientWidth/Height 0.
+    // Redraw: a canvas that was previously "display: none" had
+    // clientWidth/Height 0 at the last "maze-changed"/"assembly-changed" event.
     if (which === "maze" && state.maze) {
       drawMaze(els.mazeCanvas, state.maze);
     } else if (which === "topdown" && state.assembly) {
       drawTopdown(els.topdownCanvas, state.assembly);
     }
-    // 3D-Render-Loop nur laufen lassen, waehrend der Tab sichtbar ist
-    // (Task 12): pausiert requestAnimationFrame bei Tab-Wechsel weg von 3D,
-    // initialisiert den Renderer lazy beim ersten Aktivieren.
+    // Only run the 3D render loop while the tab is visible (task 12):
+    // pauses requestAnimationFrame when switching away from 3D, initializes
+    // the renderer lazily on first activation.
     set3dActive(els.view3d, which === "3d");
     if (which === "3d") {
       handle3dResize();
@@ -281,8 +281,8 @@ function init() {
 
   window.addEventListener("resize", () => {
     handle3dResize();
-    // Auch die aktuell sichtbare 2D-Canvas neu zeichnen -- deren Groesse
-    // haengt am Container und aendert sich mit dem Fenster.
+    // Also redraw the currently visible 2D canvas -- its size depends on
+    // the container and changes with the window.
     if (currentTab === "maze" && state.maze) {
       drawMaze(els.mazeCanvas, state.maze);
     } else if (currentTab === "topdown" && state.assembly) {
@@ -291,7 +291,7 @@ function init() {
   });
 
   // ---------------------------------------------------------------------
-  // Tile-Set-Status
+  // Tile set status
   // ---------------------------------------------------------------------
 
   function renderTileStatus() {
@@ -302,12 +302,12 @@ function init() {
         if (!variants) continue;
         const li = document.createElement("li");
         const count = Object.keys(variants).length;
-        li.textContent = `${name}: ${count} Variante${count === 1 ? "" : "n"}`;
+        li.textContent = `${name}: ${count} variant${count === 1 ? "" : "s"}`;
         els.tileStatus.appendChild(li);
       }
     } else {
       const li = document.createElement("li");
-      li.textContent = "Kein Tile-Set geladen.";
+      li.textContent = "No tile set loaded.";
       els.tileStatus.appendChild(li);
     }
 
@@ -316,14 +316,14 @@ function init() {
       if (missing.length > 0) {
         const li = document.createElement("li");
         li.className = "tile-missing";
-        li.textContent = `Fehlend: ${missing.join(", ")}`;
+        li.textContent = `Missing: ${missing.join(", ")}`;
         els.tileStatus.appendChild(li);
       }
     }
   }
 
   // ---------------------------------------------------------------------
-  // Drag & Drop eigener Tiles
+  // Drag & drop custom tiles
   // ---------------------------------------------------------------------
 
   els.tileDrop.addEventListener("dragover", (ev) => {
@@ -340,7 +340,7 @@ function init() {
     const files = droppedFiles.filter((f) => /\.litematic$/i.test(f.name));
     if (files.length === 0) {
       if (droppedFiles.length > 0) {
-        addMessage("Nur .litematic-Dateien werden unterstützt.", "warning");
+        addMessage("Only .litematic files are supported.", "warning");
       }
       return;
     }
@@ -366,7 +366,7 @@ function init() {
       try {
         const tileset = TileSet.fromEntries([...state.userFiles.values()], { weights: {}, clusters: {} });
         state.tileset = tileset;
-        addMessage("Eigene Tiles aktiv (ersetzen die Presets).", "info");
+        addMessage("Custom tiles active (replacing the presets).", "info");
         renderTileStatus();
         render();
       } catch (err) {
@@ -375,7 +375,7 @@ function init() {
           for (const key of addedKeys) state.userFiles.delete(key);
           renderTileStatus();
         } else {
-          addMessage(`Unerwarteter Fehler beim Laden der Tiles: ${err.message}`, "error");
+          addMessage(`Unexpected error loading tiles: ${err.message}`, "error");
         }
       }
     }
@@ -385,17 +385,17 @@ function init() {
     state.userFiles.clear();
     if (state.presetTileset) {
       state.tileset = state.presetTileset;
-      addMessage("Presets wiederhergestellt.", "info");
+      addMessage("Presets restored.", "info");
     } else {
       state.tileset = null;
-      addMessage("Keine Presets verfügbar.", "warning");
+      addMessage("No presets available.", "warning");
     }
     renderTileStatus();
     render();
   });
 
   // ---------------------------------------------------------------------
-  // Presets laden (Task 9: web/presets/index.json)
+  // Load presets (task 9: web/presets/index.json)
   // ---------------------------------------------------------------------
 
   async function loadPresets() {
@@ -406,9 +406,9 @@ function init() {
       manifest = await res.json();
     } catch {
       addMessage(
-        "Presets konnten nicht geladen werden (benötigt einen HTTP(S)-Server, z.B. " +
-          "`python3 -m http.server` -- Aufruf per file:// funktioniert nicht). " +
-          "Drag & Drop eigener Tiles funktioniert trotzdem.",
+        "Presets could not be loaded (requires an HTTP(S) server, e.g. " +
+          "`python3 -m http.server` -- opening via file:// doesn't work). " +
+          "Drag & drop of custom tiles still works.",
         "warning",
       );
       return;
@@ -444,7 +444,7 @@ function init() {
       renderTileStatus();
       render();
     } catch (err) {
-      addMessage(`Presets konnten nicht geladen werden: ${err.message}`, "error");
+      addMessage(`Presets could not be loaded: ${err.message}`, "error");
     }
   }
 
@@ -455,13 +455,13 @@ function init() {
   if (!supportsCompression()) {
     els.downloadBtn.disabled = true;
     addMessage(
-      "Dein Browser unterstützt keine Kompression (CompressionStream) -- Download nicht möglich.",
+      "Your browser doesn't support compression (CompressionStream) -- download not possible.",
       "warning",
     );
   } else {
     els.downloadBtn.addEventListener("click", async () => {
       if (!state.assembly) {
-        addMessage("Noch kein Schematic verfügbar.", "warning");
+        addMessage("No schematic available yet.", "warning");
         return;
       }
       try {
@@ -471,13 +471,13 @@ function init() {
         const gzipped = await gzip(bytes);
         downloadBlob(gzipped, `${name}.litematic`);
       } catch (err) {
-        addMessage(`Download fehlgeschlagen: ${err.message}`, "error");
+        addMessage(`Download failed: ${err.message}`, "error");
       }
     });
   }
 
   // ---------------------------------------------------------------------
-  // Los geht's
+  // Let's go
   // ---------------------------------------------------------------------
 
   renderTileStatus();

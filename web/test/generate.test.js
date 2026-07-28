@@ -5,7 +5,7 @@ import { N, E, S, W, generateMaze, defaultOptions, presetOptions, DUNGEON_PRESET
 
 function opts(over = {}) { return { ...defaultOptions(), ...over }; }
 
-test("Default 20x20: exakte Groesse, Rand zu, genau 1 Eingang oben + 1 unten", () => {
+test("Default 20x20: exact size, closed border, exactly 1 entrance top + 1 bottom", () => {
   const m = generateMaze(opts(), makeRng(1));
   assert.equal(m.cols, 20);
   assert.equal(m.rows, 20);
@@ -16,32 +16,32 @@ test("Default 20x20: exakte Groesse, Rand zu, genau 1 Eingang oben + 1 unten", (
   }
   assert.equal(top, 1);
   assert.equal(bottom, 1);
-  // Seitenraender komplett zu
+  // Side borders fully closed
   for (let r = 0; r < m.rows; r++) {
     assert.ok(!m.masks[r][0].has(W));
     assert.ok(!m.masks[r][m.cols - 1].has(E));
   }
 });
 
-test("Masken sind symmetrisch: Osten offen <=> Nachbar Westen offen", () => {
+test("Masks are symmetric: east open <=> neighbor's west open", () => {
   const m = generateMaze(opts({ shortcuts: 0.5, coverage: 0.5, rooms: 0.5 }), makeRng(2));
   for (let r = 0; r < m.rows; r++) {
     for (let c = 0; c < m.cols - 1; c++) {
-      assert.equal(m.masks[r][c].has(E), m.masks[r][c + 1].has(W), `bei ${r},${c}`);
+      assert.equal(m.masks[r][c].has(E), m.masks[r][c + 1].has(W), `at ${r},${c}`);
     }
   }
   for (let r = 0; r < m.rows - 1; r++) {
     for (let c = 0; c < m.cols; c++) {
-      assert.equal(m.masks[r][c].has(S), m.masks[r + 1][c].has(N), `bei ${r},${c}`);
+      assert.equal(m.masks[r][c].has(S), m.masks[r + 1][c].has(N), `at ${r},${c}`);
     }
   }
 });
 
-test("Perfektes Maze (shortcuts=0, coverage=1): alle Zellen erreichbar", () => {
+test("Perfect maze (shortcuts=0, coverage=1): all cells reachable", () => {
   const m = generateMaze(opts({ entrances: false }), makeRng(3));
   const seen = new Set();
   const stack = [[0, 0]];
-  // Startzelle: erste offene Zelle suchen
+  // Start cell: find the first open cell
   outer: for (let r = 0; r < m.rows; r++) for (let c = 0; c < m.cols; c++) {
     if (m.masks[r][c].size) { stack[0] = [r, c]; break outer; }
   }
@@ -59,10 +59,10 @@ test("Perfektes Maze (shortcuts=0, coverage=1): alle Zellen erreichbar", () => {
   let open = 0;
   for (const row of m.masks) for (const mask of row) if (mask.size) open++;
   assert.equal(seen.size, open);
-  assert.equal(open, m.rows * m.cols); // coverage=1: alles ausgegraben
+  assert.equal(open, m.rows * m.cols); // coverage=1: everything carved
 });
 
-test("Reproduzierbar: gleicher Seed, gleiches Maze", () => {
+test("Reproducible: same seed, same maze", () => {
   const a = generateMaze(opts({ shortcuts: 0.3, rooms: 0.4 }), makeRng(7));
   const b = generateMaze(opts({ shortcuts: 0.3, rooms: 0.4 }), makeRng(7));
   assert.deepEqual(
@@ -71,7 +71,7 @@ test("Reproduzierbar: gleicher Seed, gleiches Maze", () => {
   );
 });
 
-test("Presets vorhanden und presetOptions setzt Werte", () => {
+test("Presets exist and presetOptions sets values", () => {
   const names = ["labyrinth", "catacombs", "hedge", "palace", "fortress",
     "suburb", "city", "pacman", "starship", "garden", "forbidden"];
   assert.deepEqual(Object.keys(DUNGEON_PRESETS).sort(), [...names].sort());
@@ -81,7 +81,7 @@ test("Presets vorhanden und presetOptions setzt Werte", () => {
   assert.equal(o.cols, 30);
 });
 
-test("Alle Presets laufen fehlerfrei in mehreren Groessen", () => {
+test("All presets run without error at several sizes", () => {
   for (const name of Object.keys(DUNGEON_PRESETS)) {
     for (const [c, r] of [[10, 10], [21, 13], [30, 20]]) {
       const m = generateMaze(presetOptions(name, c, r), makeRng(5));

@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeRng } from "../js/rng.js";
 
-test("gleicher Seed liefert gleiche Sequenz", () => {
+test("same seed yields same sequence", () => {
   const a = makeRng(42), b = makeRng(42);
   for (let i = 0; i < 100; i++) assert.equal(a.random(), b.random());
 });
 
-test("random() liegt in [0,1)", () => {
+test("random() is within [0,1)", () => {
   const r = makeRng(7);
   for (let i = 0; i < 1000; i++) {
     const v = r.random();
@@ -15,7 +15,7 @@ test("random() liegt in [0,1)", () => {
   }
 });
 
-test("randRange/randIntRange/choice respektieren Grenzen", () => {
+test("randRange/randIntRange/choice respect bounds", () => {
   const r = makeRng(1);
   for (let i = 0; i < 1000; i++) {
     assert.ok(r.randRange(5) >= 0 && r.randRange(5) < 5);
@@ -25,14 +25,14 @@ test("randRange/randIntRange/choice respektieren Grenzen", () => {
   assert.ok([1, 2, 3].includes(r.choice([1, 2, 3])));
 });
 
-test("shuffle permutiert in-place", () => {
+test("shuffle permutes in place", () => {
   const r = makeRng(3);
   const arr = [1, 2, 3, 4, 5];
   r.shuffle(arr);
   assert.deepEqual([...arr].sort(), [1, 2, 3, 4, 5]);
 });
 
-test("weightedIndex respektiert Nullgewichte", () => {
+test("weightedIndex respects zero weights", () => {
   const r = makeRng(9);
   for (let i = 0; i < 200; i++) {
     assert.equal(r.weightedIndex([0, 1, 0]), 1);

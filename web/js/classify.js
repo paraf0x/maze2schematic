@@ -1,4 +1,4 @@
-// Port von maze2schematic/classify.py — Maske (offene Richtungen) -> Tile + Rotation.
+// Port of maze2schematic/classify.py — mask (open directions) -> tile + rotation.
 import { N, E, S, W } from "./generate.js";
 
 export const CANONICAL_MASKS = {

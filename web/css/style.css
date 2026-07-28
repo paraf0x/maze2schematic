@@ -1,4 +1,4 @@
-/* maze2schematic-web -- UI-Skeleton (dunkles, jsmaze-artig schlichtes Farbschema) */
+/* maze2schematic-web -- UI skeleton (dark, jsmaze-style plain color scheme) */
 
 :root {
   --bg: #1b1d22;
@@ -38,7 +38,7 @@ body {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Panel (links)                                                          */
+/* Panel (left)                                                           */
 /* ---------------------------------------------------------------------- */
 
 #panel {
@@ -235,7 +235,7 @@ button.primary {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Vorschau (rechts)                                                      */
+/* Preview (right)                                                        */
 /* ---------------------------------------------------------------------- */
 
 #preview {
@@ -278,8 +278,8 @@ button.primary {
   display: block;
 }
 
-/* Task 12: #view-3d haelt den WebGL-Canvas von preview3d.js sowie -- bei zu
-   grosser Grundflaeche -- eine Text-Meldung statt eines Mesh. */
+/* Task 12: #view-3d holds the WebGL canvas from preview3d.js as well as --
+   when the footprint is too large -- a text message instead of a mesh. */
 #view-3d {
   position: relative;
 }
@@ -297,7 +297,7 @@ button.primary {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Responsive: unter 800px Breite stapeln (Panel oben)                    */
+/* Responsive: stack below 800px width (panel on top)                     */
 /* ---------------------------------------------------------------------- */
 
 @media (max-width: 800px) {

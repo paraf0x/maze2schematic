@@ -1,13 +1,13 @@
-"""Labyrinth-Generator, portiert von jsmaze (Dungeon Maze Generator).
+"""Maze generator, ported from jsmaze (Dungeon Maze Generator).
 
 Original: Morgan McGuire, @CasualEffects, https://casual-effects.com
-https://morgan3d.github.io/misc/jsmaze/ (BSD-Lizenz)
+https://morgan3d.github.io/misc/jsmaze/ (BSD license)
 
-Der Generator arbeitet auf einem Blockraster: EMPTY (0) = Gang,
-SOLID (255) = Wand. Zellen liegen auf ungeraden Indizes, Waende dazwischen.
-Hall-/Wall-Size aus dem Original entfaellt hier -- die Geometrie kommt
-aus den Litematica-Tiles. Das Ergebnis wird in das Zellmasken-Modell
-(`Maze`) konvertiert und laeuft durch die normale Tile-Pipeline.
+The generator works on a block grid: EMPTY (0) = corridor,
+SOLID (255) = wall. Cells sit at odd indices, walls in between.
+The hall/wall size from the original is dropped here -- the geometry
+comes from the Litematica tiles. The result is converted into the
+cell-mask model (`Maze`) and runs through the normal tile pipeline.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ SOLID, RESERVED, EMPTY = 255, 127, 0
 class AxisOptions:
     loop: bool = False
     mirror: bool = False
-    border: int = 1  # 0 oder 1 (dickere Raender ueber Tiles loesen)
+    border: int = 1  # 0 or 1 (thicker borders are handled via tiles)
 
 
 @dataclass
@@ -33,15 +33,15 @@ class GenerateOptions:
     cols: int = 20
     rows: int = 20
     straightness: float = 0.0
-    shortcuts: float = 0.0  # "imperfect" im Original: Anteil zusaetzlicher Loops
-    coverage: float = 1.0   # "fill" im Original: wie viel Flaeche das Labyrinth fuellt
-    rooms: float = 0.0      # Anteil der Sackgassen, die zu Raeumen werden
+    shortcuts: float = 0.0  # "imperfect" in the original: fraction of extra loops
+    coverage: float = 1.0   # "fill" in the original: how much area the maze fills
+    rooms: float = 0.0      # fraction of dead ends that become rooms
     horizontal: AxisOptions = field(default_factory=AxisOptions)
     vertical: AxisOptions = field(default_factory=AxisOptions)
-    entrances: bool = True  # Ein-/Ausgang oben/unten in den Rand stanzen
+    entrances: bool = True  # punch an entrance/exit into the top/bottom border
 
 
-# Presets von der jsmaze-Website (Hall-/Wall-Size entfaellt):
+# Presets from the jsmaze website (hall/wall size is dropped):
 # (hloop, vloop, hborder, vborder, hmirror, vmirror, shortcuts, straightness, coverage, rooms)
 DUNGEON_PRESETS: dict[str, tuple] = {
     "labyrinth": (False, False, 1, 1, False, False, 0.00, 0.00, 1.00, 0.00),
@@ -83,11 +83,11 @@ def _make_maze(
     dead_ends: list[list[int]],
     rng: random.Random,
 ) -> list[list[int]]:
-    """Direkte Portierung von makeMaze() aus jsmaze (hall/wall = 1)."""
+    """Direct port of makeMaze() from jsmaze (hall/wall = 1)."""
     h_symmetry = horizontal.mirror
     h_border = horizontal.border
-    # Wrapping ignorieren, ausser Border und Symmetrie sind gesetzt; dann ohne
-    # Wrapping generieren und Loecher in den Rand stanzen
+    # Ignore wrapping unless border and symmetry are both set; in that case
+    # generate without wrapping and punch holes into the border
     h_wrap = horizontal.loop and not (h_symmetry and h_border)
 
     v_symmetry = vertical.mirror
@@ -102,7 +102,7 @@ def _make_maze(
             j = random_int(i + 1)
             a[i], a[j] = a[j], a[i]
 
-    # Raender, die spaeter entfernt werden, vorab ausgleichen
+    # Pre-compensate for borders that will be removed later
     if not h_border:
         w += 1
         if not h_wrap:
@@ -139,13 +139,13 @@ def _make_maze(
                 if rng.random() < reserve_prob:
                     maze[x][y] = RESERVED
 
-    # Gaenge ausgraben (DFS), Start in der Mitte
+    # Carve corridors (DFS), starting in the middle
     start_step = (0, 0)
     stack = [((w // 4) * 2 - 1, (h // 4) * 2 - 1, start_step)]
     dead_ends.append([stack[0][0], stack[0][1]])
     directions = [(-1, 0), (1, 0), (0, 1), (0, -1)]
 
-    # Reservierte Zellen erst beruecksichtigen, wenn ein Mindestpfad existiert
+    # Only consider reserved cells once a minimum path exists
     ignore_reserved = max(w, h)
 
     def unexplored(x: int, y: int) -> bool:
@@ -173,14 +173,14 @@ def _make_maze(
         if not unexplored(cx, cy):
             continue
         set_cell(cx, cy, EMPTY)
-        # Wand Richtung Ursprung ebenfalls oeffnen
+        # Also open the wall toward the origin
         set_cell(cx - step[0], cy - step[1], EMPTY)
         ignore_reserved -= 1
 
         shuffle(directions)
 
-        # Geradeaus bevorzugen: den letzten Schritt ans Ende sortieren
-        # (der Stack ist LIFO, das letzte Element wird zuerst verarbeitet)
+        # Prefer straight ahead: sort the last step to the end
+        # (the stack is LIFO, the last element is processed first)
         if rng.random() < straightness:
             for i in range(4):
                 if directions[i] is step:
@@ -221,7 +221,7 @@ def _make_maze(
             remove(random_int(w * 0.5 - h_bdry * 2) * 2 + h_bdry * 2,
                    random_int(h * 0.5 - v_bdry * 2) * 2 + 1)
 
-        # Einzelne Wand-Inseln wieder anbinden
+        # Reconnect isolated wall islands
         for y in range(0, h, 2):
             for x in range(0, w, 2):
                 a = maze[x][(y + 1) % h]
@@ -232,7 +232,7 @@ def _make_maze(
                     dx, dy = directions[random_int(4)]
                     set_cell(x + dx, y + dy, SOLID)
 
-    # Reservierungen aufheben
+    # Clear reservations
     if reserve_prob > 0:
         for x in range(1, w, 2):
             for y in range(1, h, 2):
@@ -253,14 +253,14 @@ def _make_maze(
                 maze[x][0] = EMPTY
                 maze[x][-1] = EMPTY
 
-    # Horizontale Raender
+    # Horizontal borders
     if not h_wrap and not h_border:
         maze.pop(0)
         maze.pop()
         for de in dead_ends:
             de[0] -= 1
     elif h_border and h_wrap and not h_symmetry:
-        # Linke Kante rechts duplizieren
+        # Duplicate the left edge on the right
         maze.append(list(maze[0]))
         for de in list(dead_ends):
             if de[0] == 0:
@@ -271,7 +271,7 @@ def _make_maze(
         for de in dead_ends:
             de[0] -= 2
 
-    # Vertikale Raender
+    # Vertical borders
     if v_border and v_wrap and not v_symmetry:
         for col in maze:
             col.append(col[0])
@@ -291,7 +291,7 @@ def _make_maze(
         for de in dead_ends:
             de[1] -= 2
 
-    # Sackgassen ausserhalb des Rasters entfernen
+    # Remove dead ends outside the grid
     dead_ends[:] = [de for de in dead_ends if de[0] >= 0 and de[1] >= 0]
 
     return maze
@@ -304,11 +304,11 @@ def _add_rooms(
     dead_ends: list[list[int]],
     rooms_fraction: float,
 ) -> None:
-    """Portierung von addMapRooms() aus jsmaze (hall/wall = 1)."""
+    """Port of addMapRooms() from jsmaze (hall/wall = 1)."""
     w, h = len(lattice), len(lattice[0])
     rooms_fraction = max(0.0, min(1.0, rooms_fraction))
 
-    # Raumgroesse (im Original abhaengig von hall+wall = 2)
+    # Room size (depends on hall+wall = 2 in the original)
     a = math.ceil(0.6 * 2 / max(rooms_fraction, 0.4))
     b = a
 
@@ -322,7 +322,7 @@ def _add_rooms(
             for y in range(lo, hi):
                 lattice[x][y] = EMPTY
 
-    # Symmetrie wiederherstellen
+    # Restore symmetry
     if horizontal.mirror:
         offset = 2 if horizontal.loop else 1
         for y in range(h):
@@ -336,12 +336,12 @@ def _add_rooms(
 
 
 def _lattice_to_maze(lattice: list[list[int]], x_phase: int, y_phase: int) -> Maze:
-    """Konvertiert das Blockraster in Zellmasken.
+    """Converts the block grid into cell masks.
 
-    Zellen liegen bei Index `1 - phase + 2k`. Nicht ausgegrabene Zellen
-    (SOLID) bekommen eine leere Maske (-> closed-Tile). Raum-Ausgrabungen auf
-    Wandpfosten (gerade/gerade) koennen Tiles nicht abbilden; die Pfosten der
-    Tiles bleiben dann als Saeulen stehen.
+    Cells sit at index `1 - phase + 2k`. Cells that weren't carved (SOLID)
+    get an empty mask (-> closed tile). Room carve-outs on wall posts
+    (even/even) can't be represented by tiles; the tiles' posts then remain
+    standing as pillars.
     """
     lw, lh = len(lattice), len(lattice[0])
     xs = list(range(1 - x_phase, lw, 2))
@@ -357,10 +357,10 @@ def _lattice_to_maze(lattice: list[list[int]], x_phase: int, y_phase: int) -> Ma
                 wx, wy = lx + dx, ly + dy
                 if not (0 <= wx < lw and 0 <= wy < lh) or lattice[wx][wy] != EMPTY:
                     continue
-                # Kante nur oeffnen, wenn auch die Nachbarzelle ausgegraben ist.
-                # (Bei coverage < 1 kann das Original Wandnischen erzeugen, die
-                # das Tile-Modell nicht abbilden kann.) Nachbarn ausserhalb des
-                # Rasters (Loop-/Randoeffnungen) zaehlen als offen.
+                # Only open an edge if the neighboring cell was also carved.
+                # (At coverage < 1 the original can produce wall recesses that
+                # the tile model can't represent.) Neighbors outside the grid
+                # (loop/border openings) count as open.
                 nx, ny = lx + 2 * dx, ly + 2 * dy
                 if 0 <= nx < lw and 0 <= ny < lh and lattice[nx][ny] != EMPTY:
                     continue
@@ -369,9 +369,9 @@ def _lattice_to_maze(lattice: list[list[int]], x_phase: int, y_phase: int) -> Ma
 
 
 def generate_maze(opts: GenerateOptions, rng: random.Random) -> Maze:
-    """Erzeugt ein Labyrinth mit dem jsmaze-Algorithmus als Zellmasken-Maze."""
-    # Ziel: bei Border + ohne Wrap exakt cols x rows Zellen. makeMaze macht aus
-    # geradem w per `w += ~(w & 1)` genau w-1 (ungerade) -> 2*cols+2 einspeisen.
+    """Generates a maze with the jsmaze algorithm as a cell-mask maze."""
+    # Goal: with border + no wrap, exactly cols x rows cells. makeMaze turns
+    # an even w into exactly w-1 (odd) via `w += ~(w & 1)` -> feed in 2*cols+2.
     lattice = _make_maze(
         w=2 * opts.cols + 2,
         h=2 * opts.rows + 2,
@@ -393,7 +393,7 @@ def generate_maze(opts: GenerateOptions, rng: random.Random) -> Maze:
     y_phase = 1 if (not opts.vertical.border and not v_wrap) else 0
     maze = _lattice_to_maze(lattice, x_phase, y_phase)
 
-    # Ein-/Ausgang oben/unten in den Rand stanzen (nur wenn der Rand zu ist)
+    # Punch an entrance/exit into the top/bottom border (only if the border is closed)
     if opts.entrances and opts.vertical.border and not v_wrap:
         top = [c for c in range(maze.cols) if maze.masks[0][c]]
         bottom = [c for c in range(maze.cols) if maze.masks[-1][c]]

@@ -114,7 +114,7 @@ export function parseLitematic(uint8) {
   const regions = Object.entries(regionsCompound).map(([regionName, regionTag]) => {
     const region = parseRegion(regionName, regionTag.value);
     if (region.hasTileEntities) {
-      warnings.push(`Region "${regionName}" enthaelt TileEntities, die ignoriert werden.`);
+      warnings.push(`Region "${regionName}" contains tile entities, which will be ignored.`);
     }
     const { hasTileEntities, ...publicRegion } = region;
     void hasTileEntities;

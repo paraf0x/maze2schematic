@@ -11,7 +11,7 @@ from .generate import DUNGEON_PRESETS, GenerateOptions, generate_maze, preset_op
 from .svg_parser import E, N, S, W, parse_svg
 from .tiles import TileLoadError, TileSet
 
-# Box-Drawing-Zeichen je Menge offener Richtungen
+# Box-drawing character per set of open directions
 _PREVIEW_CHARS = {
     frozenset(): "·",
     frozenset({N}): "╵",
@@ -33,7 +33,7 @@ _PREVIEW_CHARS = {
 
 
 def print_preview(maze) -> None:
-    print(f"Erkanntes Labyrinth: {maze.cols} x {maze.rows} Zellen")
+    print(f"Detected maze: {maze.cols} x {maze.rows} cells")
     for row in maze.masks:
         print("".join(_PREVIEW_CHARS[frozenset(mask)] for mask in row))
 
@@ -42,9 +42,9 @@ def _parse_size(value: str) -> tuple[int, int]:
     try:
         cols, rows = (int(v) for v in value.lower().split("x"))
     except ValueError:
-        raise argparse.ArgumentTypeError(f"Groesse muss SPALTENxZEILEN sein, z.B. 20x20: {value!r}")
+        raise argparse.ArgumentTypeError(f"Size must be COLSxROWS, e.g. 20x20: {value!r}")
     if cols < 2 or rows < 2:
-        raise argparse.ArgumentTypeError("Groesse muss mindestens 2x2 sein.")
+        raise argparse.ArgumentTypeError("Size must be at least 2x2.")
     return cols, rows
 
 
@@ -52,43 +52,43 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="maze2schematic",
         description=(
-            "Baut aus einer Labyrinth-SVG oder einem generierten Labyrinth "
-            "(jsmaze-Algorithmus) und Litematica-Tiles ein Gesamt-Schematic."
+            "Builds a complete schematic from a maze SVG or a generated maze "
+            "(jsmaze algorithm) and Litematica tiles."
         ),
     )
-    parser.add_argument("svg", nargs="?", help="Pfad zur Labyrinth-SVG (Line-Maze-Format)")
-    parser.add_argument("--tiles", default="tiles", help="Ordner mit Tile-Schematics (Default: tiles)")
-    parser.add_argument("-o", "--out", default="maze.litematic", help="Ausgabedatei (Default: maze.litematic)")
-    parser.add_argument("--name", default="maze", help="Name des Schematics")
-    parser.add_argument("--author", default="maze2schematic", help="Autor des Schematics")
-    parser.add_argument("--seed", type=int, default=None, help="Seed fuer Generator und Variantenauswahl (reproduzierbar)")
-    parser.add_argument("--preview", action="store_true", help="Nur ASCII-Vorschau ausgeben, kein Schematic schreiben")
+    parser.add_argument("svg", nargs="?", help="Path to the maze SVG (line-maze format)")
+    parser.add_argument("--tiles", default="tiles", help="Folder with tile schematics (default: tiles)")
+    parser.add_argument("-o", "--out", default="maze.litematic", help="Output file (default: maze.litematic)")
+    parser.add_argument("--name", default="maze", help="Name of the schematic")
+    parser.add_argument("--author", default="maze2schematic", help="Author of the schematic")
+    parser.add_argument("--seed", type=int, default=None, help="Seed for the generator and variant selection (reproducible)")
+    parser.add_argument("--preview", action="store_true", help="Print an ASCII preview only, don't write a schematic")
     parser.add_argument(
         "--map-template",
-        metavar="DATEI",
-        help="Leere Bias-Map-Vorlage in Labyrinth-Groesse schreiben und beenden",
+        metavar="FILE",
+        help="Write an empty bias-map template sized to the maze and exit",
     )
 
     gen = parser.add_argument_group(
-        "Generator (jsmaze von Morgan McGuire, statt SVG)"
+        "Generator (jsmaze by Morgan McGuire, instead of SVG)"
     )
-    gen.add_argument("--generate", metavar="WxH", type=_parse_size, help="Labyrinth generieren, Groesse in Zellen, z.B. 20x20")
-    gen.add_argument("--dungeon", choices=sorted(DUNGEON_PRESETS), help="Parameter-Preset der jsmaze-Website")
-    gen.add_argument("--straightness", type=float, help="Geradlinigkeit der Gaenge 0..1 (Default 0)")
-    gen.add_argument("--shortcuts", type=float, help="Anteil zusaetzlicher Loops 0..1 (Default 0)")
-    gen.add_argument("--coverage", type=float, help="Flaechenfuellung 0..1 (Default 1; <1 laesst massive Bereiche)")
-    gen.add_argument("--rooms", type=float, help="Raeume an Sackgassen 0..1 (Default 0)")
-    gen.add_argument("--h-loop", action="store_true", default=None, help="horizontal umlaufend (Torus)")
-    gen.add_argument("--v-loop", action="store_true", default=None, help="vertikal umlaufend (Torus)")
-    gen.add_argument("--h-mirror", action="store_true", default=None, help="horizontal spiegeln")
-    gen.add_argument("--v-mirror", action="store_true", default=None, help="vertikal spiegeln")
-    gen.add_argument("--no-h-border", action="store_true", help="ohne linken/rechten Rand")
-    gen.add_argument("--no-v-border", action="store_true", help="ohne oberen/unteren Rand")
-    gen.add_argument("--no-entrances", action="store_true", help="keinen Ein-/Ausgang in den Rand stanzen")
+    gen.add_argument("--generate", metavar="WxH", type=_parse_size, help="Generate a maze, size in cells, e.g. 20x20")
+    gen.add_argument("--dungeon", choices=sorted(DUNGEON_PRESETS), help="Parameter preset from the jsmaze website")
+    gen.add_argument("--straightness", type=float, help="Straightness of corridors 0..1 (default 0)")
+    gen.add_argument("--shortcuts", type=float, help="Fraction of extra loops 0..1 (default 0)")
+    gen.add_argument("--coverage", type=float, help="Area fill 0..1 (default 1; <1 leaves solid areas)")
+    gen.add_argument("--rooms", type=float, help="Rooms at dead ends 0..1 (default 0)")
+    gen.add_argument("--h-loop", action="store_true", default=None, help="horizontal wraparound (torus)")
+    gen.add_argument("--v-loop", action="store_true", default=None, help="vertical wraparound (torus)")
+    gen.add_argument("--h-mirror", action="store_true", default=None, help="mirror horizontally")
+    gen.add_argument("--v-mirror", action="store_true", default=None, help="mirror vertically")
+    gen.add_argument("--no-h-border", action="store_true", help="without left/right border")
+    gen.add_argument("--no-v-border", action="store_true", help="without top/bottom border")
+    gen.add_argument("--no-entrances", action="store_true", help="don't punch an entrance/exit into the border")
     args = parser.parse_args(argv)
 
     if (args.svg is None) == (args.generate is None):
-        parser.error("entweder eine SVG-Datei ODER --generate WxH angeben")
+        parser.error("specify either an SVG file OR --generate WxH")
 
     rng = random.Random(args.seed)
 
@@ -123,16 +123,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.map_template:
         with open(args.map_template, "w") as f:
-            f.write(f"# Bias-Map {maze.cols}x{maze.rows}: Ziffern 0-9, '.' = 1, 0 = gesperrt\n")
+            f.write(f"# Bias map {maze.cols}x{maze.rows}: digits 0-9, '.' = 1, 0 = blocked\n")
             for _ in range(maze.rows):
                 f.write("." * maze.cols + "\n")
-        print(f"Vorlage geschrieben: {args.map_template} ({maze.cols}x{maze.rows})")
+        print(f"Template written: {args.map_template} ({maze.cols}x{maze.rows})")
         return 0
 
     if args.preview:
         print_preview(maze)
         stats = tile_stats(maze)
-        print("\nTile-Verteilung:")
+        print("\nTile distribution:")
         for tile_name, count in stats.most_common():
             print(f"  {tile_name:10s} {count}")
         return 0
@@ -140,9 +140,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         tileset = TileSet.load(args.tiles)
     except TileLoadError as err:
-        print(f"Fehler beim Laden der Tiles: {err}", file=sys.stderr)
+        print(f"Error loading tiles: {err}", file=sys.stderr)
         print(
-            "Tipp: Beispiel-Tiles erzeugen mit: python -m maze2schematic.make_default_tiles",
+            "Tip: generate sample tiles with: python -m maze2schematic.make_default_tiles",
             file=sys.stderr,
         )
         return 1
@@ -150,27 +150,27 @@ def main(argv: list[str] | None = None) -> int:
     try:
         styles = assign_styles(maze, tileset, rng)
     except BiasMapError as err:
-        print(f"Fehler in der Bias-Map: {err}", file=sys.stderr)
+        print(f"Error in the bias map: {err}", file=sys.stderr)
         return 1
 
     if any(len(entries) > 1 for entries in tileset.variants.values()):
-        print("Tile-Varianten (Gewicht/Summe):")
+        print("Tile variants (weight/total):")
         print(tileset.describe())
         counts = style_stats(styles)
         parts = ", ".join(
             f"{style or 'default'}={n}" for style, n in counts.most_common()
         )
-        print(f"Style-Verteilung ({maze.rows * maze.cols} Zellen): {parts}")
+        print(f"Style distribution ({maze.rows * maze.cols} cells): {parts}")
 
     schem = assemble(maze, tileset, name=args.name, author=args.author, rng=rng, styles=styles)
     schem.save(args.out)
 
     ts = tileset.size
     print(
-        f"OK: {maze.cols}x{maze.rows} Zellen, Tile-Groesse {ts}x{tileset.height}x{ts} "
-        f"-> {maze.cols * ts}x{tileset.height}x{maze.rows * ts} Bloecke"
+        f"OK: {maze.cols}x{maze.rows} cells, tile size {ts}x{tileset.height}x{ts} "
+        f"-> {maze.cols * ts}x{tileset.height}x{maze.rows * ts} blocks"
     )
-    print(f"geschrieben: {args.out}")
+    print(f"written: {args.out}")
     return 0
 
 

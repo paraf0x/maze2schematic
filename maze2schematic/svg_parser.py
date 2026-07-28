@@ -1,10 +1,10 @@
-"""Parst eine Labyrinth-SVG im "Line Maze"-Format (mazegenerator.net).
+"""Parses a maze SVG in the "line maze" format (mazegenerator.net).
 
-In diesem Format sind die Polylines nicht die Waende, sondern die begehbaren
-Pfade: Linien verbinden die Zentren benachbarter Zellen. Ein-/Ausgang sind
-kurze Stummel, die ueber den Zellraster-Rand hinausragen.
+In this format the polylines aren't the walls but the walkable paths:
+lines connect the centers of neighboring cells. Entrances/exits are
+short stubs that extend past the cell-grid border.
 
-Ergebnis: pro Zelle eine Menge offener Richtungen (N/E/S/W).
+Result: a set of open directions (N/E/S/W) per cell.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass
 
-# Richtungen, im Uhrzeigersinn (wichtig fuer die Rotationslogik)
+# Directions, clockwise (important for the rotation logic)
 N, E, S, W = 0, 1, 2, 3
 DIR_NAMES = {N: "N", E: "E", S: "S", W: "W"}
 
@@ -22,7 +22,7 @@ DIR_NAMES = {N: "N", E: "E", S: "S", W: "W"}
 class Maze:
     rows: int
     cols: int
-    # masks[row][col] = Menge offener Richtungen {N, E, S, W}
+    # masks[row][col] = set of open directions {N, E, S, W}
     masks: list[list[set[int]]]
 
 
@@ -31,7 +31,7 @@ class SvgParseError(Exception):
 
 
 def _parse_segments(svg_path: str) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    """Liest alle polyline/line-Elemente und liefert achsenparallele Segmente."""
+    """Reads all polyline/line elements and returns axis-aligned segments."""
     tree = ET.parse(svg_path)
     segments = []
     for el in tree.iter():
@@ -49,22 +49,22 @@ def _parse_segments(svg_path: str) -> list[tuple[tuple[float, float], tuple[floa
                 )
             )
     if not segments:
-        raise SvgParseError("Keine polyline/line-Elemente in der SVG gefunden.")
+        raise SvgParseError("No polyline/line elements found in the SVG.")
     for (x1, y1), (x2, y2) in segments:
         if x1 != x2 and y1 != y2:
-            raise SvgParseError(f"Nicht achsenparalleles Segment: ({x1},{y1})-({x2},{y2})")
+            raise SvgParseError(f"Non-axis-aligned segment: ({x1},{y1})-({x2},{y2})")
     return segments
 
 
 def _infer_lattice(values: list[float]) -> tuple[float, float, int]:
-    """Ermittelt (origin, step, count) des Zellzentren-Rasters aus Koordinatenwerten.
+    """Determines (origin, step, count) of the cell-center grid from coordinate values.
 
-    Ausreisser (Ein-/Ausgangsstummel, die ueber den Rand hinausragen) werden
-    ignoriert, indem die haeufigste Restklasse modulo der Schrittweite gewinnt.
+    Outliers (entrance/exit stubs that extend past the border) are ignored
+    by picking the most common residue class modulo the step size.
     """
     distinct = sorted(set(values))
     if len(distinct) < 2:
-        raise SvgParseError("Zu wenige Koordinatenwerte, um ein Raster zu erkennen.")
+        raise SvgParseError("Too few coordinate values to detect a grid.")
     diffs = [b - a for a, b in zip(distinct, distinct[1:])]
     step = Counter(diffs).most_common(1)[0][0]
     residues = Counter(round(v % step, 6) for v in distinct)
@@ -83,7 +83,7 @@ def parse_svg(svg_path: str) -> Maze:
     ox, step_x, cols = _infer_lattice(xs)
     oy, step_y, rows = _infer_lattice(ys)
     if step_x != step_y:
-        raise SvgParseError(f"Unterschiedliche Rasterweiten x={step_x}, y={step_y}.")
+        raise SvgParseError(f"Different grid spacings x={step_x}, y={step_y}.")
     step = step_x
 
     def to_cell(v: float, origin: float) -> float:
@@ -106,7 +106,7 @@ def parse_svg(svg_path: str) -> Maze:
             masks[r1][col1].add(N)
             masks[r2][col2].add(S)
         else:
-            raise SvgParseError(f"Segment verbindet nicht-benachbarte Zellen {c1} und {c2}.")
+            raise SvgParseError(f"Segment connects non-adjacent cells {c1} and {c2}.")
 
     def clamp_cell(cf: float, count: int) -> int:
         return max(0, min(count - 1, int(round(cf))))
@@ -123,7 +123,7 @@ def parse_svg(svg_path: str) -> Maze:
         on2 = on_lattice(cx2, cy2)
 
         if on1 and on2:
-            # Pfadsegment: alle Zellenpaare entlang des Segments oeffnen
+            # Path segment: open all cell pairs along the segment
             r1, c1 = int(cy1), int(cx1)
             r2, c2 = int(cy2), int(cx2)
             dr = (r2 > r1) - (r2 < r1)
@@ -133,7 +133,7 @@ def parse_svg(svg_path: str) -> Maze:
                 open_between((r, c), (r + dr, c + dc))
                 r, c = r + dr, c + dc
         elif on1 or on2:
-            # Stummel ueber den Rand hinaus: Ein-/Ausgang der Randzelle
+            # Stub extending past the border: entrance/exit of the border cell
             (ix, iy) = (cx1, cy1) if on1 else (cx2, cy2)
             (fx, fy) = (cx2, cy2) if on1 else (cx1, cy1)
             r, c = int(iy), int(ix)
@@ -146,8 +146,8 @@ def parse_svg(svg_path: str) -> Maze:
             else:
                 masks[r][c].add(E)
         else:
-            # Segment komplett ausserhalb des Rasters: z.B. der Mittelteil eines
-            # laengeren Stummels; auf die naechste Randzelle beziehen.
+            # Segment entirely outside the grid: e.g. the middle part of a
+            # longer stub; attribute it to the nearest border cell.
             r = clamp_cell((cy1 + cy2) / 2, rows)
             c = clamp_cell((cx1 + cx2) / 2, cols)
             if (cy1 + cy2) / 2 < 0:

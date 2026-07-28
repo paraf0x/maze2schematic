@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { N, E, S, W } from "../js/generate.js";
 import { classify } from "../js/classify.js";
 
-// Erwartungswerte aus classify.py abgeleitet: kanonisch + kleinste Rotation.
+// Expected values derived from classify.py: canonical + smallest rotation.
 const CASES = [
   [[], "closed", 0],
   [[N], "dead_end", 0], [[E], "dead_end", 1], [[S], "dead_end", 2], [[W], "dead_end", 3],
@@ -13,8 +13,8 @@ const CASES = [
   [[N, E, S, W], "cross", 0],
 ];
 
-test("alle 16 Masken werden korrekt klassifiziert", () => {
+test("all 16 masks are classified correctly", () => {
   for (const [dirs, name, rotation] of CASES) {
-    assert.deepEqual(classify(new Set(dirs)), { name, rotation }, `Maske {${dirs}}`);
+    assert.deepEqual(classify(new Set(dirs)), { name, rotation }, `mask {${dirs}}`);
   }
 });

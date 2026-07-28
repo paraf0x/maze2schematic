@@ -1,19 +1,19 @@
-// Laedt Tile-Schematics (bereits als parseLitematic-Ergebnis vorliegend) und
-// rotiert sie in 90-Grad-Schritten. Port von maze2schematic/tiles.py.
+// Loads tile schematics (already available as a parseLitematic result) and
+// rotates them in 90-degree steps. Port of maze2schematic/tiles.py.
 //
-// Ein Tile wird als 3D-Array von BlockStates gehalten, indiziert [x][y][z]
-// (Minecraft-Achsen: x = Ost, y = hoch, z = Sued). Norden ist -z; die SVG-Zeile 0
-// liegt im fertigen Schematic bei z = 0.
+// A tile is held as a 3D array of BlockStates, indexed [x][y][z]
+// (Minecraft axes: x = east, y = up, z = south). North is -z; SVG row 0
+// sits at z = 0 in the finished schematic.
 
 import { AIR, stateKey } from "./litematic.js";
 import { CANONICAL_MASKS } from "./classify.js";
 
 export class TileError extends Error {}
 
-// facing-Werte im Uhrzeigersinn
+// facing values clockwise
 const _FACING_CW = { north: "east", east: "south", south: "west", west: "north" };
 const _AXIS_CW = { x: "z", z: "x" };
-// Verbindungs-Properties (Zaeune, Glasscheiben, Mauern, Redstone, Vines, ...)
+// Connection properties (fences, glass panes, walls, redstone, vines, ...)
 const _SIDE_PROPS = ["north", "east", "south", "west"];
 const _RAIL_SHAPE_CW = {
   north_south: "east_west",
@@ -28,7 +28,7 @@ const _RAIL_SHAPE_CW = {
   north_west: "north_east",
 };
 
-/** Rotiert einen BlockState um 90 Grad im Uhrzeigersinn (von oben gesehen). */
+/** Rotates a BlockState by 90 degrees clockwise (viewed from above). */
 export function rotateStateCw(state) {
   const props = state.props;
   if (!props || Object.keys(props).length === 0) return state;
@@ -59,7 +59,7 @@ export function rotateStateCw(state) {
   return { id: state.id, props: newProps };
 }
 
-/** Port von Tile.rotated_cw: (x, z) -> (size-1-z, x), Nordkante wandert zur Ostkante. */
+/** Port of Tile.rotated_cw: (x, z) -> (size-1-z, x), north edge moves to the east edge. */
 export function rotatedCw(tile) {
   const s = tile.size;
   const newBlocks = [];
@@ -78,17 +78,17 @@ export function rotatedCw(tile) {
   return { name: tile.name, size: s, height: tile.height, blocks: newBlocks };
 }
 
-/** Port von _load_tile (tiles.py:88-113), operiert auf einem parseLitematic-Ergebnis. */
+/** Port of _load_tile (tiles.py:88-113), operates on a parseLitematic result. */
 export function tileFromParsed(doc, name) {
   if (doc.regions.length !== 1) {
-    throw new TileError(`${name}: erwartet genau 1 Region, gefunden ${doc.regions.length}.`);
+    throw new TileError(`${name}: expected exactly 1 region, found ${doc.regions.length}.`);
   }
   const region = doc.regions[0];
   const sx = region.sizeX;
   const sy = region.sizeY;
   const sz = region.sizeZ;
   if (sx !== sz) {
-    throw new TileError(`${name}: Grundflaeche muss quadratisch sein, ist ${sx}x${sz}.`);
+    throw new TileError(`${name}: footprint must be square, is ${sx}x${sz}.`);
   }
 
   const blocks = [];
@@ -104,7 +104,7 @@ export function tileFromParsed(doc, name) {
   return { name, size: sx, height: sy, blocks };
 }
 
-// Alternative Dateinamen je kanonischem Tile-Namen (presets/-Struktur)
+// Alternate filenames per canonical tile name (presets/ structure)
 export const ALIASES = {
   dead_end: ["dead_end", "deadend"],
   straight: ["straight"],
@@ -118,27 +118,27 @@ export const REQUIRED = ["dead_end", "straight", "turn", "tee", "cross"];
 
 export const DEFAULT_STYLE = "";
 
-/** Port von _style_of (tiles.py:149-156). */
+/** Port of _style_of (tiles.py:149-156). */
 export function styleOf(stem, alias) {
   if (stem === alias) return DEFAULT_STYLE;
   if (stem.startsWith(alias + "_")) return stem.slice(alias.length + 1);
   return stem;
 }
 
-// Sucht in der flachen Entry-Liste die Datei(en) fuer einen Tile-Typ; liefert
-// { alias, matches }. Ersetzt das Dateisystem-Layout von _find_tile_files:
-// im Web gibt es nur eine flache Liste von Dateien (Manifest oder Drag&Drop).
+// Searches the flat entry list for the file(s) of a tile type; returns
+// { alias, matches }. Replaces the filesystem layout of _find_tile_files:
+// on the web there is only a flat list of files (manifest or drag & drop).
 //
-// Bevorzugt einen Alias, dessen Treffer eine DEFAULT_STYLE-Basis-Variante
-// enthalten (z.B. "tcross.litematic" fuer den Alias "tcross"). Nur wenn
-// KEIN Alias eine Basis-Variante liefert, wird auf den ersten Alias mit
-// irgendeinem Treffer zurueckgefallen. Ohne diese Praeferenz wuerden sich
-// gemischte Alias-Familien gegenseitig stoeren: z.B. wuerden die Dateien
-// "tcross.litematic" (Basis fuer "tcross") und "tee_slim.litematic"
-// (Style-Variante fuer "tee") sonst beide dem zuerst gelisteten Alias "tee"
-// zugeordnet -- die gueltige "tcross"-Basis wuerde ignoriert und es kaeme zu
-// einem verwirrenden TileError ("Basis-Variante fehlt"), obwohl eine Basis
-// vorhanden ist (nur unter einem anderen Alias).
+// Prefers an alias whose matches include a DEFAULT_STYLE base variant
+// (e.g. "tcross.litematic" for the alias "tcross"). Only when NO alias
+// yields a base variant does it fall back to the first alias with any
+// match at all. Without this preference, mixed alias families would
+// interfere with each other: e.g. the files "tcross.litematic" (base for
+// "tcross") and "tee_slim.litematic" (style variant for "tee") would
+// otherwise both be assigned to the first-listed alias "tee" -- the valid
+// "tcross" base would be ignored, leading to a confusing TileError
+// ("base variant missing") even though a base exists (just under a
+// different alias).
 function findTileFiles(stemEntries, canonical) {
   let fallback = null;
   for (const alias of ALIASES[canonical]) {
@@ -175,9 +175,9 @@ function mostCommonNonAirBlock(tile) {
   return best ? best.state : AIR;
 }
 
-// Fehlt das optionale "closed"-Tile, wird eines synthetisiert: gleiche
-// Grundflaeche/Hoehe wie das "straight"-Tile, komplett gefuellt mit dessen
-// haeufigstem Nicht-Luft-Block (Spec "Fehlerbehandlung").
+// If the optional "closed" tile is missing, one is synthesized: same
+// footprint/height as the "straight" tile, completely filled with its
+// most common non-air block (spec "error handling").
 function synthesizeClosedTile(straightTile) {
   const fill = mostCommonNonAirBlock(straightTile);
   const blocks = [];
@@ -192,7 +192,7 @@ function synthesizeClosedTile(straightTile) {
 }
 
 export class TileSet {
-  // variants[kanonischer Name][style] = [Tile, Gewicht]
+  // variants[canonical name][style] = [Tile, weight]
   // clusters[style] = { minSize, maxSize }
   constructor(variants, clusters) {
     this.variants = variants;
@@ -226,7 +226,7 @@ export class TileSet {
       if (Object.keys(styleEntries).length > 0) {
         if (!(DEFAULT_STYLE in styleEntries)) {
           throw new TileError(
-            `${alias}: Basis-Variante '${alias}.litematic' fehlt oder hat Gewicht 0.`,
+            `${alias}: base variant '${alias}.litematic' is missing or has weight 0.`,
           );
         }
         variants[canonical] = styleEntries;
@@ -241,7 +241,7 @@ export class TileSet {
 
     const missing = REQUIRED.filter((n) => !(n in variants));
     if (missing.length > 0) {
-      throw new TileError(`Fehlende Tiles: ${missing.join(", ")}`);
+      throw new TileError(`Missing tiles: ${missing.join(", ")}`);
     }
 
     const allTiles = [];
@@ -251,13 +251,13 @@ export class TileSet {
     const sizes = new Set(allTiles.map((t) => `${t.size}x${t.height}`));
     if (sizes.size !== 1) {
       const detail = allTiles.map((t) => `${t.name}=${t.size}x${t.height}x${t.size}`).join(", ");
-      throw new TileError(`Alle Tiles muessen gleich gross sein: ${detail}`);
+      throw new TileError(`All tiles must be the same size: ${detail}`);
     }
 
     return new TileSet(variants, clusters);
   }
 
-  /** Durchschnittliches Gewicht je Style ueber alle Tile-Typen. */
+  /** Average weight per style across all tile types. */
   styleWeights() {
     const sums = {};
     for (const styleEntries of Object.values(this.variants)) {
@@ -272,8 +272,8 @@ export class TileSet {
     return out;
   }
 
-  /** Tile fuer Typ + Rotation + Style; unbekannter Style faellt auf den
-   * Default zurueck (z.B. wenn ein Typ keine slim-Variante hat). */
+  /** Tile for type + rotation + style; an unknown style falls back to the
+   * default (e.g. when a type has no slim variant). */
   get(name, rotation, style = DEFAULT_STYLE) {
     const entries = this.variants[name];
     if (!(style in entries)) style = DEFAULT_STYLE;

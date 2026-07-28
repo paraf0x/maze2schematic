@@ -1,8 +1,8 @@
-"""Erzeugt die presets/-Ordnerstruktur mit einem Unterordner pro Tile-Art.
+"""Generates the presets/ folder structure with one subfolder per tile type.
 
-Struktur:
+Structure:
     presets/
-      variants.json               (Gewichte der Varianten)
+      variants.json               (variant weights)
       straight/straight.litematic
       straight/straight_slim.litematic
       turn/...
@@ -11,16 +11,17 @@ Struktur:
       deadend/...
       closed/...
 
-Tile-Aufbau (5x5 Grundflaeche, Hoehe 3):
-- Standard: Weg 3 Bloecke breit, Mauer 1 Block dick
-- Slim:     Weg 1 Block breit, Mauer 2 Bloecke dick
-- Weg-Boden aus coarse_dirt, Mauern 2 Bloecke hoch aus stone_bricks
-  (Boden unter der Mauer ebenfalls stone_bricks)
+Tile layout (5x5 footprint, height 3):
+- Standard: path 3 blocks wide, wall 1 block thick
+- Slim:     path 1 block wide, wall 2 blocks thick
+- Path floor of coarse_dirt, walls 2 blocks high of stone_bricks
+  (floor under the wall is also stone_bricks)
 
-Kanonische Ausrichtungen (siehe classify.py): deadend offen nach Norden,
-straight Nord-Sued, turn Nord+Ost, tcross zu nach Norden, xcross alle offen.
+Canonical orientations (see classify.py): deadend open to the north,
+straight north-south, turn north+east, tcross closed to the north,
+xcross all open.
 
-Nutzung: python -m maze2schematic.make_presets [presets-ordner]
+Usage: python -m maze2schematic.make_presets [presets-dir]
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from litemapy import BlockState
 from .classify import CANONICAL_MASKS
 from .make_default_tiles import make_tile_region
 
-# Preset-Ordnername -> kanonischer Tile-Name
+# Preset folder name -> canonical tile name
 PRESET_NAMES = {
     "straight": "straight",
     "turn": "turn",
@@ -48,10 +49,10 @@ PATH_FLOOR = BlockState("minecraft:coarse_dirt")
 WALL = BlockState("minecraft:stone_bricks")
 WALL_HEIGHT = 2
 
-# Variante -> Wegbreite
+# Variant -> path width
 VARIANTS = {"": 3, "_slim": 1}
 
-# Default-Config fuer variants.json
+# Default config for variants.json
 DEFAULT_WEIGHTS = {"": 3, "_slim": 1}
 DEFAULT_CLUSTERS = {"slim": {"min": 3, "max": 8}}
 
@@ -73,11 +74,11 @@ def main(presets_dir: str = "presets") -> None:
             schem = region.as_schematic(name=variant, author="maze2schematic")
             path = os.path.join(subdir, f"{variant}.litematic")
             schem.save(path)
-            print(f"geschrieben: {path}")
+            print(f"written: {path}")
 
     config_path = os.path.join(presets_dir, "variants.json")
     if os.path.exists(config_path):
-        print(f"unveraendert (existiert schon): {config_path}")
+        print(f"unchanged (already exists): {config_path}")
     else:
         config = {
             "weights": {
@@ -90,7 +91,7 @@ def main(presets_dir: str = "presets") -> None:
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
             f.write("\n")
-        print(f"geschrieben: {config_path}")
+        print(f"written: {config_path}")
 
 
 if __name__ == "__main__":
