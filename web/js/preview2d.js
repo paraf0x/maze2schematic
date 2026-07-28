@@ -122,6 +122,45 @@ export function drawMaze(canvas, maze) {
   ctx.stroke();
 }
 
+/** Draws a small top-down thumbnail of a single tile region (as returned by
+ * `parseLitematic`'s `region` objects: `{ sizeX, sizeY, sizeZ, get(x,y,z) }`).
+ * Same column-scan logic as `drawTopdown`, but works straight off a region
+ * instead of an assembled `{ palette, blocks }` pair, and uses the canvas's
+ * existing pixel size directly (`canvas.width`/`height`) instead of syncing
+ * to `clientWidth`/`clientHeight` -- at the small thumbnail sizes these are
+ * used at (~48px), DPR scaling isn't worth the complexity. Tiles are always
+ * square (`tileFromParsed` enforces sizeX === sizeZ), so a single `px` step
+ * derived from both dimensions never distorts the result. */
+export function drawTileThumb(canvas, region) {
+  const ctx = canvas.getContext("2d");
+  const w = canvas.width || 0;
+  const h = canvas.height || 0;
+  ctx.fillStyle = TOPDOWN_BG;
+  ctx.fillRect(0, 0, w, h);
+  if (!region || region.sizeX <= 0 || region.sizeZ <= 0) return;
+
+  const { sizeX, sizeY, sizeZ, get } = region;
+  const px = Math.floor(Math.min(w / sizeX, h / sizeZ));
+  if (px <= 0) return;
+
+  for (let x = 0; x < sizeX; x++) {
+    for (let z = 0; z < sizeZ; z++) {
+      let color = null;
+      for (let y = sizeY - 1; y >= 0; y--) {
+        const state = get(x, y, z);
+        if (state && state.id !== "minecraft:air") {
+          color = colorForBlock(state.id);
+          break;
+        }
+      }
+      if (color) {
+        ctx.fillStyle = color;
+        ctx.fillRect(x * px, z * px, px, px);
+      }
+    }
+  }
+}
+
 /** Draws the top-down view: for each column (x, z), the first non-air
  * block is found from the top (y = sizeY-1 downward) and its color is
  * drawn as a rectangle. Columns that are all air stay on the background

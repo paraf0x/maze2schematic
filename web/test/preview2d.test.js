@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { N, E, S, W } from "../js/generate.js";
-import { drawMaze, drawTopdown, colorForBlock, BLOCK_COLORS } from "../js/preview2d.js";
+import { drawMaze, drawTopdown, drawTileThumb, colorForBlock, BLOCK_COLORS } from "../js/preview2d.js";
 
 // ---------------------------------------------------------------------------
 // Fake canvas: no real DOM available (Node tests), so a minimal stub that
@@ -161,5 +161,82 @@ test("drawTopdown: empty assembly (sizeX=0) draws no blocks and doesn't crash", 
   const { canvas, calls } = fakeCanvas(20, 20);
   drawTopdown(canvas, { sizeX: 0, sizeY: 0, sizeZ: 0, palette: [], blocks: new Uint32Array(0) });
   // Only the initial background fill, no block rectangles.
+  assert.equal(calls.fillRect.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// drawTileThumb
+// ---------------------------------------------------------------------------
+
+// Unlike drawMaze/drawTopdown, drawTileThumb reads canvas.width/height
+// directly (no clientWidth/Height sync -- see the comment in preview2d.js),
+// so the fake canvas only needs to provide those plus getContext("2d").
+function fakeThumbCanvas(width, height) {
+  const calls = { fillRect: [] };
+  const ctx = {
+    fillRect(x, y, w, h) { calls.fillRect.push({ x, y, w, h, fillStyle: ctx.fillStyle }); },
+    fillStyle: null,
+  };
+  const canvas = {
+    width,
+    height,
+    getContext(kind) {
+      assert.equal(kind, "2d");
+      return ctx;
+    },
+  };
+  return { canvas, calls };
+}
+
+const AIR_STATE = { id: "minecraft:air", props: {} };
+const STONE_STATE = { id: "minecraft:stone", props: {} };
+
+// Hand-built 2x2x2 region: column (0,0) is fully air; the other three
+// columns have stone somewhere in their y-column (found by scanning from
+// the top, y = sizeY-1 downward, same as drawTopdown).
+function tinyRegion() {
+  return {
+    sizeX: 2,
+    sizeY: 2,
+    sizeZ: 2,
+    get(x, y, z) {
+      if (x === 0 && z === 0) return AIR_STATE; // fully air column
+      if (x === 1 && z === 0) return y === 1 ? STONE_STATE : AIR_STATE; // stone at top
+      if (x === 0 && z === 1) return y === 0 ? STONE_STATE : AIR_STATE; // stone below top air
+      return STONE_STATE; // (1,1): stone at both y layers
+    },
+  };
+}
+
+test("drawTileThumb: fills only non-air columns with the block color, scaled to canvas size", () => {
+  const { canvas, calls } = fakeThumbCanvas(4, 4); // 2x2 region -> px = 2
+  drawTileThumb(canvas, tinyRegion());
+
+  const stoneColor = colorForBlock("minecraft:stone");
+  const stoneFills = calls.fillRect.filter((r) => r.fillStyle === stoneColor);
+  assert.equal(stoneFills.length, 3);
+
+  const px = Math.floor(Math.min(4 / 2, 4 / 2)); // = 2
+  const coords = stoneFills.map((r) => `${r.x},${r.y},${r.w},${r.h}`).sort();
+  assert.deepEqual(
+    coords,
+    [`${px},0,${px},${px}`, `0,${px},${px},${px}`, `${px},${px},${px},${px}`].sort(),
+  );
+
+  // The air column (x=0, z=0) never gets the stone color.
+  assert.ok(!calls.fillRect.some((r) => r.x === 0 && r.y === 0 && r.fillStyle === stoneColor));
+});
+
+test("drawTileThumb: air-only region draws only the background fill", () => {
+  const { canvas, calls } = fakeThumbCanvas(4, 4);
+  drawTileThumb(canvas, { sizeX: 2, sizeY: 1, sizeZ: 2, get: () => AIR_STATE });
+  // Only the initial full-canvas background fill, no per-column rectangles.
+  assert.equal(calls.fillRect.length, 1);
+  assert.deepEqual(calls.fillRect[0], { x: 0, y: 0, w: 4, h: 4, fillStyle: calls.fillRect[0].fillStyle });
+});
+
+test("drawTileThumb: empty region (sizeX=0) draws only the background and doesn't crash", () => {
+  const { canvas, calls } = fakeThumbCanvas(4, 4);
+  drawTileThumb(canvas, { sizeX: 0, sizeY: 0, sizeZ: 0, get: () => AIR_STATE });
   assert.equal(calls.fillRect.length, 1);
 });

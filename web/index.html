@@ -96,7 +96,11 @@
     <section class="group">
       <h2>Tile Set</h2>
       <div id="tile-drop">Drop your own <code>.litematic</code> tiles here</div>
-      <ul id="tile-status"></ul>
+      <label id="tile-add">
+        Add tiles…
+        <input id="tile-file-input" type="file" multiple accept=".litematic">
+      </label>
+      <div id="tile-manager"></div>
       <button id="tile-reset" type="button">Restore presets</button>
     </section>
 

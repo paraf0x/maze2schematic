@@ -17,15 +17,19 @@
 import { makeRng } from "./rng.js";
 import { defaultOptions, presetOptions, generateMaze } from "./generate.js";
 import { TILE_NAMES } from "./classify.js";
-import { TileSet, TileError, REQUIRED, ALIASES } from "./tiles.js";
+import { TileSet, TileError, ALIASES, styleOf } from "./tiles.js";
 import { parseVariantsConfig } from "./variants.js";
 import { assembleBlocks } from "./assemble.js";
 import { parseLitematic, writeLitematic } from "./litematic.js";
 import { gzip, gunzip, supportsCompression, downloadBlob } from "./export.js";
-import { drawMaze, drawTopdown } from "./preview2d.js";
+import { drawMaze, drawTopdown, drawTileThumb } from "./preview2d.js";
 import { updateScene, setActive as set3dActive, handleResize as handle3dResize } from "./preview3d.js";
 
 const ASSEMBLY_DEBOUNCE_MS = 250;
+const WEIGHT_DEBOUNCE_MS = 300;
+const WEIGHT_MIN = 0.5;
+const WEIGHT_MAX = 10;
+const THUMB_SIZE = 48;
 
 function clampInt(value, lo, hi, fallback) {
   const n = Math.trunc(Number(value));
@@ -33,13 +37,30 @@ function clampInt(value, lo, hi, fallback) {
   return Math.min(hi, Math.max(lo, n));
 }
 
-/** Stems (filename without ".litematic") per required type that would
- * supply its base variant -- an independent, lightweight mirror of the
- * alias logic in tiles.js, just to show the user which types are still
- * missing BEFORE a (potentially expensive) TileSet.fromEntries attempt. */
-function missingRequiredTypes(entries) {
-  const stems = new Set(entries.map(({ filename }) => filename.replace(/\.litematic$/i, "")));
-  return REQUIRED.filter((canonical) => !ALIASES[canonical].some((alias) => stems.has(alias)));
+function clampWeight(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(WEIGHT_MAX, Math.max(WEIGHT_MIN, n));
+}
+
+/** Resolves a stem (filename without ".litematic") to its canonical tile
+ * type via the same alias rule as tiles.js's `findTileFiles`/`styleOf`:
+ * the stem either equals an alias exactly (base variant) or starts with
+ * "<alias>_" (style variant). Returns `null` if no alias matches -- e.g. a
+ * dropped file with an unrelated name. */
+function typeForStem(stem) {
+  for (const canonical of TILE_NAMES) {
+    for (const alias of ALIASES[canonical] ?? []) {
+      if (stem === alias || stem.startsWith(alias + "_")) return canonical;
+    }
+  }
+  return null;
+}
+
+/** Alias (within its canonical type's ALIASES list) that a stem resolves
+ * through -- needed to compute the style label (styleOf(stem, alias)). */
+function aliasForStem(stem, canonical) {
+  return ALIASES[canonical].find((alias) => stem === alias || stem.startsWith(alias + "_"));
 }
 
 function init() {
@@ -62,7 +83,8 @@ function init() {
     schematicName: document.getElementById("schematic-name"),
     author: document.getElementById("author"),
     tileDrop: document.getElementById("tile-drop"),
-    tileStatus: document.getElementById("tile-status"),
+    tileFileInput: document.getElementById("tile-file-input"),
+    tileManager: document.getElementById("tile-manager"),
     tileReset: document.getElementById("tile-reset"),
     downloadBtn: document.getElementById("download-btn"),
     messages: document.getElementById("messages"),
@@ -77,8 +99,17 @@ function init() {
   const state = {
     maze: null,
     tileset: null,
-    presetTileset: null,
-    userFiles: new Map(), // filename -> {filename, doc}
+    // Unified tile pool: stem (filename without ".litematic") -> {filename,
+    // doc, source}. Presets and user-added files live in the same pool;
+    // adding a file with an existing stem overrides it. `source` is
+    // "preset" or "user", used only to render the "user" badge.
+    pool: new Map(),
+    disabled: new Set(), // stems
+    weights: {}, // stem -> number (unlisted stems default to 1 at rebuild)
+    clusters: {}, // parsed clusters config from the presets, kept as-is
+    // Snapshot of the presets alone (pool/weights/clusters), used by the
+    // "Restore presets" button. Set once loadPresets() succeeds.
+    presets: null,
     assembly: null,
     options: defaultOptions(),
   };
@@ -291,40 +322,227 @@ function init() {
   });
 
   // ---------------------------------------------------------------------
-  // Tile set status
+  // Tile manager: unified pool (presets + user files), per-tile enable/
+  // disable and weight, grouped by canonical type with a preview thumbnail.
   // ---------------------------------------------------------------------
 
-  function renderTileStatus() {
-    els.tileStatus.innerHTML = "";
-    if (state.tileset) {
-      for (const name of TILE_NAMES) {
-        const variants = state.tileset.variants[name];
-        if (!variants) continue;
-        const li = document.createElement("li");
-        const count = Object.keys(variants).length;
-        li.textContent = `${name}: ${count} variant${count === 1 ? "" : "s"}`;
-        els.tileStatus.appendChild(li);
-      }
-    } else {
-      const li = document.createElement("li");
-      li.textContent = "No tile set loaded.";
-      els.tileStatus.appendChild(li);
+  /** Rebuilds state.tileset from the current pool/disabled/weights/
+   * clusters. Effective weight per stem: 0 if disabled, else the stored
+   * weight (default 1 for stems with no explicit weight). On success,
+   * updates state.tileset and returns true. On TileError (e.g. disabling a
+   * base variant, or every variant, of a required type), shows the error
+   * via addMessage and returns false -- the caller is responsible for
+   * reverting whatever pool/disabled/weights change caused it. */
+  function rebuildTileset() {
+    const effectiveWeights = {};
+    for (const stem of state.pool.keys()) {
+      effectiveWeights[stem] = state.disabled.has(stem) ? 0 : (state.weights[stem] ?? 1);
     }
-
-    if (state.userFiles.size > 0) {
-      const missing = missingRequiredTypes([...state.userFiles.values()]);
-      if (missing.length > 0) {
-        const li = document.createElement("li");
-        li.className = "tile-missing";
-        li.textContent = `Missing: ${missing.join(", ")}`;
-        els.tileStatus.appendChild(li);
+    try {
+      state.tileset = TileSet.fromEntries([...state.pool.values()], {
+        weights: effectiveWeights,
+        clusters: state.clusters,
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof TileError) {
+        addMessage(err.message, "error");
+      } else {
+        addMessage(`Unexpected error building tile set: ${err.message}`, "error");
       }
+      return false;
     }
   }
 
+  /** Applies a pool/disabled/weights mutation, then rebuilds the tile set.
+   * On success, re-renders the tile manager and triggers a maze/assembly
+   * re-render. On failure, reverts to the pre-mutation snapshot (so the UI
+   * never stays in a broken state) and only re-renders the tile manager.
+   * Returns whether the mutation was kept. */
+  function applyPoolChange(mutate) {
+    const snapshot = {
+      pool: new Map(state.pool),
+      disabled: new Set(state.disabled),
+      weights: { ...state.weights },
+    };
+    mutate();
+    const ok = rebuildTileset();
+    if (ok) {
+      renderTileManager();
+      render();
+    } else {
+      state.pool = snapshot.pool;
+      state.disabled = snapshot.disabled;
+      state.weights = snapshot.weights;
+      renderTileManager();
+    }
+    return ok;
+  }
+
+  function renderTileManager() {
+    els.tileManager.innerHTML = "";
+    if (state.pool.size === 0) {
+      const p = document.createElement("p");
+      p.className = "tile-manager-empty";
+      p.textContent = "No tiles loaded.";
+      els.tileManager.appendChild(p);
+      return;
+    }
+
+    const byType = new Map(TILE_NAMES.map((name) => [name, []]));
+    for (const stem of state.pool.keys()) {
+      const type = typeForStem(stem);
+      if (type) byType.get(type).push(stem);
+    }
+
+    for (const type of TILE_NAMES) {
+      const stems = byType.get(type);
+      if (stems.length === 0) continue;
+      stems.sort();
+
+      const group = document.createElement("div");
+      group.className = "tile-group";
+      const h3 = document.createElement("h3");
+      h3.textContent = type;
+      group.appendChild(h3);
+      for (const stem of stems) {
+        group.appendChild(renderTileRow(stem, type));
+      }
+      els.tileManager.appendChild(group);
+    }
+  }
+
+  function renderTileRow(stem, type) {
+    const entry = state.pool.get(stem);
+    const alias = aliasForStem(stem, type);
+    const style = styleOf(stem, alias);
+    const isDisabled = state.disabled.has(stem);
+
+    const row = document.createElement("div");
+    row.className = "tile-row" + (isDisabled ? " tile-row-disabled" : "");
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "tile-thumb";
+    canvas.width = THUMB_SIZE;
+    canvas.height = THUMB_SIZE;
+    const region = entry.doc.regions[0];
+    if (region) {
+      try {
+        drawTileThumb(canvas, region);
+      } catch {
+        // Malformed/irregular region -- leave the thumbnail blank rather
+        // than breaking the whole tile manager.
+      }
+    }
+    row.appendChild(canvas);
+
+    const label = document.createElement("span");
+    label.className = "tile-name";
+    label.textContent = style ? `${stem} (${style})` : stem;
+    row.appendChild(label);
+
+    if (entry.source === "user") {
+      const badge = document.createElement("span");
+      badge.className = "tile-badge";
+      badge.textContent = "user";
+      row.appendChild(badge);
+    }
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "tile-enabled";
+    checkbox.checked = !isDisabled;
+    checkbox.title = "Enabled";
+    checkbox.addEventListener("change", () => {
+      applyPoolChange(() => {
+        if (checkbox.checked) state.disabled.delete(stem);
+        else state.disabled.add(stem);
+      });
+    });
+    row.appendChild(checkbox);
+
+    const weightInput = document.createElement("input");
+    weightInput.type = "number";
+    weightInput.className = "tile-weight";
+    weightInput.min = String(WEIGHT_MIN);
+    weightInput.max = String(WEIGHT_MAX);
+    weightInput.step = "0.5";
+    weightInput.title = "Weight";
+    weightInput.value = String(state.weights[stem] ?? 1);
+    weightInput.addEventListener("input", () => {
+      scheduleWeightChange(stem, weightInput.value);
+    });
+    row.appendChild(weightInput);
+
+    return row;
+  }
+
+  const weightTimers = new Map(); // stem -> timeout id
+  function scheduleWeightChange(stem, rawValue) {
+    if (weightTimers.has(stem)) clearTimeout(weightTimers.get(stem));
+    weightTimers.set(
+      stem,
+      setTimeout(() => {
+        weightTimers.delete(stem);
+        applyPoolChange(() => {
+          state.weights[stem] = clampWeight(rawValue);
+        });
+      }, WEIGHT_DEBOUNCE_MS),
+    );
+  }
+
   // ---------------------------------------------------------------------
-  // Drag & drop custom tiles
+  // Adding tiles: drag & drop and the file-picker button both funnel
+  // through this one function.
   // ---------------------------------------------------------------------
+
+  async function addTileFiles(fileList) {
+    const allFiles = [...fileList];
+    const files = allFiles.filter((f) => /\.litematic$/i.test(f.name));
+    if (files.length === 0) {
+      if (allFiles.length > 0) {
+        addMessage("Only .litematic files are supported.", "warning");
+      }
+      return;
+    }
+
+    const parsed = [];
+    for (const file of files) {
+      let doc;
+      try {
+        const raw = new Uint8Array(await file.arrayBuffer());
+        doc = parseLitematic(await gunzip(raw));
+      } catch (err) {
+        addMessage(`${file.name}: ${err.message}`, "error");
+        continue;
+      }
+      for (const warning of doc.warnings) {
+        addMessage(`${file.name}: ${warning}`, "warning");
+      }
+      const stem = file.name.replace(/\.litematic$/i, "");
+      if (!typeForStem(stem)) {
+        addMessage(
+          `${file.name} does not match any tile type (expected: straight, turn, ` +
+            "tee/tcross, cross/xcross, dead_end/deadend, closed -- optionally with a " +
+            "_<style> suffix).",
+          "warning",
+        );
+        continue;
+      }
+      parsed.push({ stem, filename: file.name, doc });
+    }
+
+    if (parsed.length === 0) return;
+
+    const ok = applyPoolChange(() => {
+      for (const { stem, filename, doc } of parsed) {
+        state.pool.set(stem, { filename, doc, source: "user" });
+      }
+    });
+    if (ok) {
+      addMessage(`${parsed.length} tile${parsed.length === 1 ? "" : "s"} added.`, "info");
+    }
+  }
 
   els.tileDrop.addEventListener("dragover", (ev) => {
     ev.preventDefault();
@@ -336,61 +554,27 @@ function init() {
   els.tileDrop.addEventListener("drop", async (ev) => {
     ev.preventDefault();
     els.tileDrop.classList.remove("dragover");
-    const droppedFiles = [...(ev.dataTransfer?.files ?? [])];
-    const files = droppedFiles.filter((f) => /\.litematic$/i.test(f.name));
-    if (files.length === 0) {
-      if (droppedFiles.length > 0) {
-        addMessage("Only .litematic files are supported.", "warning");
-      }
-      return;
-    }
+    await addTileFiles(ev.dataTransfer?.files ?? []);
+  });
 
-    const addedKeys = [];
-    for (const file of files) {
-      try {
-        const raw = new Uint8Array(await file.arrayBuffer());
-        const doc = parseLitematic(await gunzip(raw));
-        for (const warning of doc.warnings) {
-          addMessage(`${file.name}: ${warning}`, "warning");
-        }
-        state.userFiles.set(file.name, { filename: file.name, doc });
-        addedKeys.push(file.name);
-      } catch (err) {
-        addMessage(`${file.name}: ${err.message}`, "error");
-      }
-    }
-
-    renderTileStatus();
-
-    if (missingRequiredTypes([...state.userFiles.values()]).length === 0) {
-      try {
-        const tileset = TileSet.fromEntries([...state.userFiles.values()], { weights: {}, clusters: {} });
-        state.tileset = tileset;
-        addMessage("Custom tiles active (replacing the presets).", "info");
-        renderTileStatus();
-        render();
-      } catch (err) {
-        if (err instanceof TileError) {
-          addMessage(err.message, "error");
-          for (const key of addedKeys) state.userFiles.delete(key);
-          renderTileStatus();
-        } else {
-          addMessage(`Unexpected error loading tiles: ${err.message}`, "error");
-        }
-      }
-    }
+  els.tileFileInput.addEventListener("change", async () => {
+    await addTileFiles(els.tileFileInput.files);
+    els.tileFileInput.value = ""; // allow re-adding the same file(s) later
   });
 
   els.tileReset.addEventListener("click", () => {
-    state.userFiles.clear();
-    if (state.presetTileset) {
-      state.tileset = state.presetTileset;
-      addMessage("Presets restored.", "info");
-    } else {
-      state.tileset = null;
+    if (!state.presets) {
       addMessage("No presets available.", "warning");
+      return;
     }
-    renderTileStatus();
+    state.pool = new Map(state.presets.pool);
+    state.disabled.clear();
+    state.weights = { ...state.presets.weights };
+    state.clusters = state.presets.clusters;
+    if (rebuildTileset()) {
+      addMessage("Presets restored.", "info");
+    }
+    renderTileManager();
     render();
   });
 
@@ -408,7 +592,7 @@ function init() {
       addMessage(
         "Presets could not be loaded (requires an HTTP(S) server, e.g. " +
           "`python3 -m http.server` -- opening via file:// doesn't work). " +
-          "Drag & drop of custom tiles still works.",
+          "Adding your own tiles (drag & drop or the Add tiles button) still works.",
         "warning",
       );
       return;
@@ -436,12 +620,19 @@ function init() {
         }
       }
 
-      const tileset = TileSet.fromEntries(entries, config);
-      state.presetTileset = tileset;
-      if (!state.tileset) {
-        state.tileset = tileset;
+      const pool = new Map();
+      for (const { filename, doc } of entries) {
+        const stem = filename.replace(/\.litematic$/i, "");
+        pool.set(stem, { filename, doc, source: "preset" });
       }
-      renderTileStatus();
+
+      state.pool = pool;
+      state.weights = { ...config.weights };
+      state.clusters = config.clusters;
+      state.presets = { pool: new Map(pool), weights: { ...config.weights }, clusters: config.clusters };
+
+      rebuildTileset();
+      renderTileManager();
       render();
     } catch (err) {
       addMessage(`Presets could not be loaded: ${err.message}`, "error");
@@ -480,7 +671,7 @@ function init() {
   // Let's go
   // ---------------------------------------------------------------------
 
-  renderTileStatus();
+  renderTileManager();
   render();
   loadPresets();
 }
