@@ -14,6 +14,9 @@ export function downloadBlob(bytes, filename) {
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  // Sofortiges Revoke kann den laufenden Download in Safari/Firefox abbrechen.
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
