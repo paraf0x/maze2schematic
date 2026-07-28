@@ -6,6 +6,45 @@ fuer Minecraft. Als Labyrinth-Quelle dient entweder eine SVG
 (Portierung von [jsmaze](https://morgan3d.github.io/misc/jsmaze/) von
 Morgan McGuire, BSD-Lizenz).
 
+## Web-Version
+
+Unter `https://<user>.github.io/<repo>/` laeuft eine statische Portierung
+komplett im Browser: Generator, Tile-Zusammenbau und Export laufen als
+JavaScript client-seitig, es wird kein Server benoetigt (ausser zum
+Ausliefern der statischen Dateien). Presets, 2D-/3D-Vorschau und der
+Litematica-Export (`.litematic`, gzip-komprimiert) sind ohne Python oder
+Installation nutzbar.
+
+Die Web-Presets unter `web/presets/` sind eine Kopie von `presets/`; nach
+Aenderungen an `presets/` (neue Tiles, `variants.json`) muss
+
+```bash
+.venv/bin/python scripts/make_web_presets.py
+```
+
+erneut ausgefuehrt werden, um `web/presets/` und dessen `index.json` zu
+aktualisieren.
+
+Lokal starten (vom Repo-Root, damit sowohl die Root-`index.html` als auch
+`web/` erreichbar sind):
+
+```bash
+python3 -m http.server 8080
+```
+
+und dann <http://localhost:8080/web/> im Browser oeffnen. Alternativ direkt
+mit `web/` als Docroot:
+
+```bash
+python3 -m http.server 8080 -d web
+```
+
+Tests laufen mit Node (kein Build-Schritt noetig):
+
+```bash
+node --test web/test/*.test.js
+```
+
 ## Setup
 
 ```bash
