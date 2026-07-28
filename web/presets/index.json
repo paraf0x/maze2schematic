@@ -1,0 +1,17 @@
+{
+  "files": [
+    "closed/closed.litematic",
+    "closed/closed_slim.litematic",
+    "deadend/deadend.litematic",
+    "deadend/deadend_slim.litematic",
+    "straight/straight.litematic",
+    "straight/straight_slim.litematic",
+    "tcross/tcross.litematic",
+    "tcross/tcross_slim.litematic",
+    "turn/turn.litematic",
+    "turn/turn_slim.litematic",
+    "xcross/xcross.litematic",
+    "xcross/xcross_slim.litematic"
+  ],
+  "variants": "variants.json"
+}
