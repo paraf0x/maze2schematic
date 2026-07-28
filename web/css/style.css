@@ -278,6 +278,24 @@ button.primary {
   display: block;
 }
 
+/* Task 12: #view-3d haelt den WebGL-Canvas von preview3d.js sowie -- bei zu
+   grosser Grundflaeche -- eine Text-Meldung statt eines Mesh. */
+#view-3d {
+  position: relative;
+}
+
+.view3d-message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Responsive: unter 800px Breite stapeln (Panel oben)                    */
 /* ---------------------------------------------------------------------- */

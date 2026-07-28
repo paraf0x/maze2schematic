@@ -2,9 +2,12 @@
 // Portierungs-Logik selbst, sondern ruft nur die Kern-Module (Tasks 1-8) und
 // die Preset-Assets (Task 9) auf.
 //
-// `preview3d.js` existiert erst ab Task 12: bis dahin dispatcht dieses Modul
-// das Event "assembly-changed" zwar weiterhin auf `document` (fuer Task 12),
-// zeichnet aber selbst nur die 2D-Vorschauen (Task 11, `preview2d.js`).
+// Task 12 (`preview3d.js`): der WebGL-Renderer wird lazy beim ersten
+// Aktivieren des 3D-Tabs erzeugt (`setActive`), damit vorher kein WebGL-
+// Kontext existiert. `updateScene` wird bei jedem "assembly-changed" (auch
+// wenn der 3D-Tab inaktiv ist) aufgerufen -- solange die Szene noch nicht
+// initialisiert ist, merkt sich preview3d.js das Assembly und holt es beim
+// naechsten Aktivieren nach.
 //
 // main.js exportiert nichts. Alle DOM-Verdrahtung steckt in `init()`, das erst
 // bei DOMContentLoaded (bzw. sofort, falls das Dokument schon bereit ist)
@@ -20,6 +23,7 @@ import { assembleBlocks } from "./assemble.js";
 import { parseLitematic, writeLitematic } from "./litematic.js";
 import { gzip, gunzip, supportsCompression, downloadBlob } from "./export.js";
 import { drawMaze, drawTopdown } from "./preview2d.js";
+import { updateScene, setActive as set3dActive, handleResize as handle3dResize } from "./preview3d.js";
 
 const ASSEMBLY_DEBOUNCE_MS = 250;
 
@@ -196,6 +200,7 @@ function init() {
   });
   document.addEventListener("assembly-changed", (ev) => {
     drawTopdown(els.topdownCanvas, ev.detail.assembly);
+    updateScene(ev.detail.assembly);
   });
 
   // ---------------------------------------------------------------------
@@ -248,11 +253,20 @@ function init() {
     } else if (which === "topdown" && state.assembly) {
       drawTopdown(els.topdownCanvas, state.assembly);
     }
+    // 3D-Render-Loop nur laufen lassen, waehrend der Tab sichtbar ist
+    // (Task 12): pausiert requestAnimationFrame bei Tab-Wechsel weg von 3D,
+    // initialisiert den Renderer lazy beim ersten Aktivieren.
+    set3dActive(els.view3d, which === "3d");
+    if (which === "3d") {
+      handle3dResize();
+    }
   }
   els.tabMaze.addEventListener("click", () => selectTab("maze"));
   els.tabTopdown.addEventListener("click", () => selectTab("topdown"));
   els.tab3d.addEventListener("click", () => selectTab("3d"));
   selectTab("maze");
+
+  window.addEventListener("resize", () => handle3dResize());
 
   // ---------------------------------------------------------------------
   // Tile-Set-Status
