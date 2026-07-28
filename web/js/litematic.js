@@ -66,26 +66,20 @@ function parseBlockState(compound) {
 }
 
 function parseRegion(name, compound) {
-  const pos = compound.Position.value;
   const size = compound.Size.value;
-  const posX = pos.x.value;
-  const posY = pos.y.value;
-  const posZ = pos.z.value;
   const sizeXraw = size.x.value;
   const sizeYraw = size.y.value;
   const sizeZraw = size.z.value;
 
-  // litemapy convention (tiles.py:107-109): region extents may be negative;
-  // normalize to positive sizes with origin at the min corner.
-  const minX = Math.min(posX, posX + sizeXraw + 1);
-  const minY = Math.min(posY, posY + sizeYraw + 1);
-  const minZ = Math.min(posZ, posZ + sizeZraw + 1);
+  // litemapy convention (tiles.py:107-109, Region.__region_coordinates_to_store_coordinates):
+  // Size may be negative; the BlockStates array is always stored in ascending
+  // order using abs(size), with local index 0 at the region's min corner
+  // regardless of sign. Position only offsets the region within a
+  // multi-region schematic's world space, which does not affect this local
+  // (0-based, normalized) get(x, y, z) indexing.
   const sizeX = Math.abs(sizeXraw);
   const sizeY = Math.abs(sizeYraw);
   const sizeZ = Math.abs(sizeZraw);
-  void minX;
-  void minY;
-  void minZ;
 
   const paletteList = compound.BlockStatePalette.value.items;
   const palette = paletteList.map((item) => parseBlockState(item.value));
