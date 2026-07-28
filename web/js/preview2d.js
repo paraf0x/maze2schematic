@@ -65,6 +65,111 @@ export function colorForBlock(id) {
   return `hsl(${hue}, 55%, 45%)`;
 }
 
+// ---------------------------------------------------------------------------
+// Entrance/exit arrow overlays (tile manager thumbnails). Colors and the
+// low-level arrow shape are shared with preview3d.js's `renderTileImage`
+// (3D isometric thumbnail composite), so both surfaces agree on what
+// "entrance" (green) and "exit" (orange) look like.
+// ---------------------------------------------------------------------------
+
+export const ARROW_COLOR_IN = "#4ade80"; // entrance (canonical mask's first direction)
+export const ARROW_COLOR_OUT = "#fb923c"; // exits (every other direction)
+const ARROW_OUTLINE = "#00000088"; // subtle dark outline for contrast on any background
+
+/** Draws one arrow (shaft + triangular head) from `(x0, y0)` to `(x1, y1)`
+ * -- the head points at `(x1, y1)`. Works in plain pixel/screen space, so
+ * it's usable both directly (2D top-down thumbnail, screen coordinates
+ * already) and with pre-projected pixel coordinates (3D thumbnail, after
+ * `vector.project(camera)` -> NDC -> pixel). Head/outline thickness scale
+ * with the shaft length so the arrow looks proportionate at any size. */
+export function strokeArrow(ctx, x0, y0, x1, y1, color) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.01) return;
+  const angle = Math.atan2(dy, dx);
+  const headLen = Math.min(len * 0.55, len);
+  const headWidth = headLen * 0.85;
+  const backX = x1 - headLen * Math.cos(angle);
+  const backY = y1 - headLen * Math.sin(angle);
+
+  ctx.save();
+  ctx.lineCap = "round";
+
+  // Outline pass underneath the colored shaft, for contrast against any
+  // background the thumbnail happens to render on top of.
+  ctx.strokeStyle = ARROW_OUTLINE;
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(backX, backY);
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(backX, backY);
+  ctx.stroke();
+
+  // Triangular head.
+  const perpX = -Math.sin(angle);
+  const perpY = Math.cos(angle);
+  const leftX = backX + (perpX * headWidth) / 2;
+  const leftY = backY + (perpY * headWidth) / 2;
+  const rightX = backX - (perpX * headWidth) / 2;
+  const rightY = backY - (perpY * headWidth) / 2;
+
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(leftX, leftY);
+  ctx.lineTo(rightX, rightY);
+  ctx.closePath();
+  ctx.strokeStyle = ARROW_OUTLINE;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// Screen-space "outward" unit vector per direction: N = up, E = right,
+// S = down, W = left (matches the top-down thumbnail's x-right/z-down
+// layout).
+const _ARROW_SCREEN_DIRS = { [N]: [0, -1], [E]: [1, 0], [S]: [0, 1], [W]: [-1, 0] };
+
+/** Draws `arrows` (as returned by `classify.js`'s `arrowSpecs`) directly in
+ * screen space over a `w`x`h` canvas: N = top-center, E = right-center,
+ * S = bottom-center, W = left-center. "in" arrows point from just outside
+ * the edge toward the tile center (entrance); "out" arrows point from the
+ * edge outward (exit). No-op if `arrows` is falsy/empty, so callers that
+ * never pass it see no behavior change. */
+export function drawArrows(ctx, w, h, arrows) {
+  if (!arrows || arrows.length === 0) return;
+  const size = Math.min(w, h);
+  if (size <= 0) return;
+  const shaftLen = Math.max(6, size * 0.22);
+  const margin = size * 0.08;
+
+  for (const { dir, kind } of arrows) {
+    const vec = _ARROW_SCREEN_DIRS[dir];
+    if (!vec) continue;
+    const [dx, dy] = vec;
+    const edgeX = w / 2 + dx * (size / 2 - margin);
+    const edgeY = h / 2 + dy * (size / 2 - margin);
+    const outwardX = edgeX + (dx * shaftLen) / 2;
+    const outwardY = edgeY + (dy * shaftLen) / 2;
+    const inwardX = edgeX - (dx * shaftLen) / 2;
+    const inwardY = edgeY - (dy * shaftLen) / 2;
+    const color = kind === "in" ? ARROW_COLOR_IN : ARROW_COLOR_OUT;
+    if (kind === "in") {
+      strokeArrow(ctx, outwardX, outwardY, inwardX, inwardY, color);
+    } else {
+      strokeArrow(ctx, inwardX, inwardY, outwardX, outwardY, color);
+    }
+  }
+}
+
 function _devicePixelRatio() {
   if (typeof devicePixelRatio !== "undefined" && devicePixelRatio) return devicePixelRatio;
   if (typeof window !== "undefined" && window.devicePixelRatio) return window.devicePixelRatio;
@@ -130,35 +235,40 @@ export function drawMaze(canvas, maze) {
  * to `clientWidth`/`clientHeight` -- at the small thumbnail sizes these are
  * used at (~48px), DPR scaling isn't worth the complexity. Tiles are always
  * square (`tileFromParsed` enforces sizeX === sizeZ), so a single `px` step
- * derived from both dimensions never distorts the result. */
-export function drawTileThumb(canvas, region) {
+ * derived from both dimensions never distorts the result.
+ *
+ * `arrows` (optional, as returned by `classify.js`'s `arrowSpecs`) overlays
+ * entrance/exit arrows via `drawArrows` -- omitted by default, so existing
+ * callers/tests see no change. */
+export function drawTileThumb(canvas, region, arrows) {
   const ctx = canvas.getContext("2d");
   const w = canvas.width || 0;
   const h = canvas.height || 0;
   ctx.fillStyle = TOPDOWN_BG;
   ctx.fillRect(0, 0, w, h);
-  if (!region || region.sizeX <= 0 || region.sizeZ <= 0) return;
-
-  const { sizeX, sizeY, sizeZ, get } = region;
-  const px = Math.floor(Math.min(w / sizeX, h / sizeZ));
-  if (px <= 0) return;
-
-  for (let x = 0; x < sizeX; x++) {
-    for (let z = 0; z < sizeZ; z++) {
-      let color = null;
-      for (let y = sizeY - 1; y >= 0; y--) {
-        const state = get(x, y, z);
-        if (state && state.id !== "minecraft:air") {
-          color = colorForBlock(state.id);
-          break;
+  if (region && region.sizeX > 0 && region.sizeZ > 0) {
+    const { sizeX, sizeY, sizeZ, get } = region;
+    const px = Math.floor(Math.min(w / sizeX, h / sizeZ));
+    if (px > 0) {
+      for (let x = 0; x < sizeX; x++) {
+        for (let z = 0; z < sizeZ; z++) {
+          let color = null;
+          for (let y = sizeY - 1; y >= 0; y--) {
+            const state = get(x, y, z);
+            if (state && state.id !== "minecraft:air") {
+              color = colorForBlock(state.id);
+              break;
+            }
+          }
+          if (color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x * px, z * px, px, px);
+          }
         }
-      }
-      if (color) {
-        ctx.fillStyle = color;
-        ctx.fillRect(x * px, z * px, px, px);
       }
     }
   }
+  drawArrows(ctx, w, h, arrows);
 }
 
 /** Draws the top-down view: for each column (x, z), the first non-air

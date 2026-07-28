@@ -1,7 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { N, E, S, W } from "../js/generate.js";
-import { drawMaze, drawTopdown, drawTileThumb, colorForBlock, BLOCK_COLORS } from "../js/preview2d.js";
+import {
+  drawMaze,
+  drawTopdown,
+  drawTileThumb,
+  drawArrows,
+  colorForBlock,
+  BLOCK_COLORS,
+  ARROW_COLOR_IN,
+  ARROW_COLOR_OUT,
+} from "../js/preview2d.js";
 
 // ---------------------------------------------------------------------------
 // Fake canvas: no real DOM available (Node tests), so a minimal stub that
@@ -171,11 +180,27 @@ test("drawTopdown: empty assembly (sizeX=0) draws no blocks and doesn't crash", 
 // Unlike drawMaze/drawTopdown, drawTileThumb reads canvas.width/height
 // directly (no clientWidth/Height sync -- see the comment in preview2d.js),
 // so the fake canvas only needs to provide those plus getContext("2d").
+// Also stubs the path/stroke/fill methods `strokeArrow`/`drawArrows` use
+// (save/restore/beginPath/moveTo/lineTo/closePath/stroke/fill), recording
+// stroke() and fill() calls with the strokeStyle/fillStyle active at the
+// time -- unused by the plain fill-rect tests below, but needed by the
+// arrow-overlay tests further down.
 function fakeThumbCanvas(width, height) {
-  const calls = { fillRect: [] };
+  const calls = { fillRect: [], stroke: [], fill: [] };
   const ctx = {
     fillRect(x, y, w, h) { calls.fillRect.push({ x, y, w, h, fillStyle: ctx.fillStyle }); },
+    save() {},
+    restore() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    stroke() { calls.stroke.push(ctx.strokeStyle); },
+    fill() { calls.fill.push(ctx.fillStyle); },
     fillStyle: null,
+    strokeStyle: null,
+    lineWidth: null,
+    lineCap: null,
   };
   const canvas = {
     width,
@@ -239,4 +264,55 @@ test("drawTileThumb: empty region (sizeX=0) draws only the background and doesn'
   const { canvas, calls } = fakeThumbCanvas(4, 4);
   drawTileThumb(canvas, { sizeX: 0, sizeY: 0, sizeZ: 0, get: () => AIR_STATE });
   assert.equal(calls.fillRect.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// drawArrows / drawTileThumb(..., arrows)
+// ---------------------------------------------------------------------------
+
+test("drawTileThumb: arrows omitted -- no arrow paths drawn (existing behavior unchanged)", () => {
+  const { canvas, calls } = fakeThumbCanvas(48, 48);
+  drawTileThumb(canvas, tinyRegion());
+  assert.equal(calls.stroke.length, 0);
+  assert.equal(calls.fill.length, 0);
+});
+
+test("drawTileThumb: arrows=[] -- no arrow paths drawn", () => {
+  const { canvas, calls } = fakeThumbCanvas(48, 48);
+  drawTileThumb(canvas, tinyRegion(), []);
+  assert.equal(calls.stroke.length, 0);
+  assert.equal(calls.fill.length, 0);
+});
+
+test("drawTileThumb: draws an arrow path (shaft strokes + head fill) per provided arrow", () => {
+  const { canvas, calls } = fakeThumbCanvas(48, 48);
+  const arrows = [
+    { dir: N, kind: "in" },
+    { dir: E, kind: "out" },
+  ];
+  drawTileThumb(canvas, tinyRegion(), arrows);
+
+  // Each arrow draws 2 strokes (outline pass + colored shaft) + 1 head
+  // stroke, and fills its head once.
+  assert.equal(calls.stroke.length, 3 * arrows.length);
+  assert.equal(calls.fill.length, arrows.length);
+
+  // The entrance (N, "in") is filled green; the exit (E, "out") orange.
+  assert.deepEqual(calls.fill, [ARROW_COLOR_IN, ARROW_COLOR_OUT]);
+});
+
+test("drawArrows: no-op when arrows is falsy/empty", () => {
+  const { canvas, calls } = fakeThumbCanvas(48, 48);
+  const ctx = canvas.getContext("2d");
+  drawArrows(ctx, 48, 48, null);
+  drawArrows(ctx, 48, 48, []);
+  assert.equal(calls.stroke.length, 0);
+  assert.equal(calls.fill.length, 0);
+});
+
+test("drawArrows: unknown direction is skipped without crashing", () => {
+  const { canvas, calls } = fakeThumbCanvas(48, 48);
+  const ctx = canvas.getContext("2d");
+  drawArrows(ctx, 48, 48, [{ dir: 99, kind: "in" }]);
+  assert.equal(calls.fill.length, 0);
 });

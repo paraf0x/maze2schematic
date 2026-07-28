@@ -16,7 +16,7 @@
 
 import { makeRng } from "./rng.js";
 import { defaultOptions, presetOptions, generateMaze } from "./generate.js";
-import { TILE_NAMES } from "./classify.js";
+import { TILE_NAMES, arrowSpecs } from "./classify.js";
 import { TileSet, TileError, ALIASES, styleOf, rotateDoc } from "./tiles.js";
 import { parseVariantsConfig } from "./variants.js";
 import { assembleBlocks } from "./assemble.js";
@@ -415,6 +415,11 @@ function init() {
       return;
     }
 
+    const legend = document.createElement("p");
+    legend.className = "tile-manager-hint";
+    legend.textContent = "Arrows show each type's expected openings (green in, orange out).";
+    els.tileManager.appendChild(legend);
+
     const byType = new Map(TILE_NAMES.map((name) => [name, []]));
     for (const stem of state.pool.keys()) {
       const type = typeForStem(stem);
@@ -444,13 +449,24 @@ function init() {
    * (`drawTileThumb`) otherwise -- e.g. no WebGL, or a malformed/irregular
    * region that throws. Both element kinds share the `.tile-thumb` class
    * (sizing/border/background), so nothing else needs to know which one it
-   * got. */
-  function renderTileThumbEl(region) {
+   * got.
+   *
+   * Both renderers get `arrowSpecs(type)` -- the CANONICAL expected
+   * openings for the row's tile type, not derived from the tile's actual
+   * blocks, so rotating the tile (which doesn't change its type) never
+   * changes the arrows. A `title` tooltip spells out the color legend. */
+  function renderTileThumbEl(region, type) {
+    const arrows = arrowSpecs(type);
+    const title =
+      arrows.length > 0
+        ? `green = entrance (in), orange = exits (out) — expected openings for ${type}`
+        : `${type}: no openings expected`;
+
     let dataUrl = null;
     if (region) {
       try {
         const assembly = assemblyFromRegion(region);
-        dataUrl = renderTileImage(assembly, THUMB_RENDER_SIZE);
+        dataUrl = renderTileImage(assembly, THUMB_RENDER_SIZE, arrows);
       } catch {
         dataUrl = null;
       }
@@ -461,6 +477,7 @@ function init() {
       img.width = THUMB_SIZE;
       img.height = THUMB_SIZE;
       img.alt = "";
+      img.title = title;
       img.src = dataUrl;
       return img;
     }
@@ -469,9 +486,10 @@ function init() {
     canvas.className = "tile-thumb";
     canvas.width = THUMB_SIZE;
     canvas.height = THUMB_SIZE;
+    canvas.title = title;
     if (region) {
       try {
-        drawTileThumb(canvas, region);
+        drawTileThumb(canvas, region, arrows);
       } catch {
         // Malformed/irregular region -- leave the thumbnail blank rather
         // than breaking the whole tile manager.
@@ -490,7 +508,7 @@ function init() {
     row.className = "tile-row" + (isDisabled ? " tile-row-disabled" : "");
 
     const region = entry.doc.regions[0];
-    row.appendChild(renderTileThumbEl(region));
+    row.appendChild(renderTileThumbEl(region, type));
 
     const label = document.createElement("span");
     label.className = "tile-name";

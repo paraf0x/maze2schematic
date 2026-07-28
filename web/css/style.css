@@ -201,6 +201,12 @@ button.primary {
   color: var(--fg-dim);
 }
 
+.tile-manager-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
 .tile-group h3 {
   margin: 0 0 4px;
   font-size: 11px;
