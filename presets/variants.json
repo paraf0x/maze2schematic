@@ -1,0 +1,23 @@
+{
+  "weights": {
+    "straight": 3,
+    "straight_slim": 1,
+    "turn": 3,
+    "turn_slim": 1,
+    "tcross": 3,
+    "tcross_slim": 1,
+    "xcross": 3,
+    "xcross_slim": 1,
+    "deadend": 3,
+    "deadend_slim": 1,
+    "closed": 3,
+    "closed_slim": 1
+  },
+  "clusters": {
+    "slim": {
+      "min": 3,
+      "max": 8,
+      "map": "slim_map.txt"
+    }
+  }
+}
