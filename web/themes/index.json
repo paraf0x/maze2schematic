@@ -18,7 +18,43 @@
         "xcross.litematic",
         "xcross_slim.litematic"
       ],
+      "disabled": [
+        "closed",
+        "closed_slim"
+      ],
       "variants": "variants.json"
+    },
+    {
+      "id": "plain",
+      "label": "Plain walls",
+      "dir": "plain",
+      "files": [
+        "closed.litematic",
+        "cross.litematic",
+        "dead_end.litematic",
+        "straight.litematic",
+        "tee.litematic",
+        "turn.litematic"
+      ],
+      "disabled": [
+        "closed"
+      ]
+    },
+    {
+      "id": "catacombs",
+      "label": "Paris catacombs",
+      "dir": "catacombs",
+      "files": [
+        "closed.litematic",
+        "cross.litematic",
+        "dead_end.litematic",
+        "straight.litematic",
+        "tee.litematic",
+        "turn.litematic"
+      ],
+      "disabled": [
+        "closed"
+      ]
     },
     {
       "id": "fallout-metro",
@@ -31,6 +67,9 @@
         "straight.litematic",
         "tee.litematic",
         "turn.litematic"
+      ],
+      "disabled": [
+        "closed"
       ]
     },
     {
@@ -44,6 +83,9 @@
         "straight.litematic",
         "tee.litematic",
         "turn.litematic"
+      ],
+      "disabled": [
+        "closed"
       ]
     }
   ]

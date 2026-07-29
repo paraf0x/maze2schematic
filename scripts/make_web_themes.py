@@ -19,12 +19,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DST = ROOT / "web" / "themes"
 
+# All built-in themes ship with the closed tile disabled by default: at low
+# coverage the solid cells then stay empty (air) in the schematic. Users can
+# re-enable the closed tile per theme in the tile manager.
 THEMES = [
     {
         "id": "classic",
         "label": "Classic stone",
         "src": ROOT / "presets",
         "variants": "variants.json",
+    },
+    {
+        "id": "plain",
+        "label": "Plain walls",
+        "src": ROOT / "tiles",
+        "variants": None,
+    },
+    {
+        "id": "catacombs",
+        "label": "Paris catacombs",
+        "src": ROOT / "tiles_catacombs",
+        "variants": None,
     },
     {
         "id": "fallout-metro",
@@ -39,6 +54,8 @@ THEMES = [
         "variants": None,
     },
 ]
+
+DEFAULT_DISABLED = ["closed"]
 
 
 def build_theme(theme: dict) -> dict:
@@ -59,6 +76,18 @@ def build_theme(theme: dict) -> dict:
         files.append(tile.name)
 
     manifest = {"id": theme_id, "label": theme["label"], "dir": theme_id, "files": files}
+    # Disable every variant of the default-disabled types (disabling only the
+    # base while a style variant stays enabled would be a TileError).
+    disabled = [
+        name[: -len(".litematic")]
+        for name in files
+        if any(
+            name == f"{stem}.litematic" or name.startswith(f"{stem}_")
+            for stem in DEFAULT_DISABLED
+        )
+    ]
+    if disabled:
+        manifest["disabled"] = disabled
 
     variants_name = theme["variants"]
     if variants_name:

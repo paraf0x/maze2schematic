@@ -952,7 +952,14 @@ function init() {
       const stem = filename.replace(/\.litematic$/i, "");
       pool.set(stem, { filename, doc, bytes, source: "preset" });
     }
-    return { pool, weights: { ...config.weights }, disabled: new Set(), clusters: config.clusters };
+    return {
+      pool,
+      weights: { ...config.weights },
+      // Built-in themes can ship stems disabled by default (manifest
+      // "disabled", e.g. the closed tile: solid cells stay empty then).
+      disabled: new Set(meta.disabled ?? []),
+      clusters: config.clusters,
+    };
   }
 
   /** Builds a {pool, weights, disabled, clusters} snapshot from an
