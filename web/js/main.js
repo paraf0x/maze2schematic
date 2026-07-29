@@ -417,7 +417,9 @@ function init() {
 
     const legend = document.createElement("p");
     legend.className = "tile-manager-hint";
-    legend.textContent = "Arrows show each type's expected openings (green in, orange out).";
+    legend.textContent =
+      "Arrows show each type's expected openings (green in, orange out). " +
+      "Disable the closed tile to leave solid cells empty in the schematic.";
     els.tileManager.appendChild(legend);
 
     const byType = new Map(TILE_NAMES.map((name) => [name, []]));

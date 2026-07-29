@@ -165,12 +165,12 @@ test("rotateDoc: single rotation moves a marker block to the expected coordinate
   }
 });
 
-test("TileSet: missing optional closed tile is synthesized (full, no air)", () => {
+test("TileSet: missing optional closed tile is synthesized as all air (empty cells)", () => {
   const entries = presetEntries().filter((e) => !e.filename.startsWith("closed"));
   const ts = TileSet.fromEntries(entries, config());
   const closed = ts.get("closed", 0, DEFAULT_STYLE);
   for (let x = 0; x < closed.size; x++)
     for (let y = 0; y < closed.height; y++)
       for (let z = 0; z < closed.size; z++)
-        assert.notEqual(closed.blocks[x][y][z].id, "minecraft:air");
+        assert.equal(closed.blocks[x][y][z].id, "minecraft:air");
 });

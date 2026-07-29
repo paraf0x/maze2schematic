@@ -175,6 +175,7 @@ def assemble(
     author: str = "maze2schematic",
     rng: random.Random | None = None,
     styles: StyleGrid | None = None,
+    skip_closed: bool = False,
 ) -> Schematic:
     rng = rng if rng is not None else random.Random()
     if styles is None:
@@ -182,9 +183,16 @@ def assemble(
     ts = tileset.size
     region = Region(0, 0, 0, maze.cols * ts, tileset.height, maze.rows * ts)
 
+    # Closed cells stay empty (air) when requested or when the tile set has
+    # no closed tile at all -- the region is air by default, so skipping the
+    # cell is all it takes.
+    skip_closed = skip_closed or "closed" not in tileset.variants
+
     for row in range(maze.rows):
         for col in range(maze.cols):
             tile_name, rotation = classify(maze.masks[row][col])
+            if tile_name == "closed" and skip_closed:
+                continue
             tile = tileset.get(tile_name, rotation, styles[row][col])
             ox, oz = col * ts, row * ts
             for x in range(ts):

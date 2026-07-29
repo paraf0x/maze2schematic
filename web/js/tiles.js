@@ -175,37 +175,15 @@ function findTileFiles(stemEntries, canonical) {
   return { alias: canonical, matches: [] };
 }
 
-function mostCommonNonAirBlock(tile) {
-  const counts = new Map(); // stateKey -> { state, count }
-  for (let x = 0; x < tile.size; x++) {
-    for (let y = 0; y < tile.height; y++) {
-      for (let z = 0; z < tile.size; z++) {
-        const state = tile.blocks[x][y][z];
-        if (state.id === AIR.id) continue;
-        const key = stateKey(state);
-        const entry = counts.get(key);
-        if (entry) entry.count += 1;
-        else counts.set(key, { state, count: 1 });
-      }
-    }
-  }
-  let best = null;
-  for (const entry of counts.values()) {
-    if (!best || entry.count > best.count) best = entry;
-  }
-  return best ? best.state : AIR;
-}
-
-// If the optional "closed" tile is missing, one is synthesized: same
-// footprint/height as the "straight" tile, completely filled with its
-// most common non-air block (spec "error handling").
+// If the optional "closed" tile is missing (or disabled in the tile
+// manager), one is synthesized filled with AIR: closed cells then stay
+// empty in the schematic instead of being stamped with a solid filler.
 function synthesizeClosedTile(straightTile) {
-  const fill = mostCommonNonAirBlock(straightTile);
   const blocks = [];
   for (let x = 0; x < straightTile.size; x++) {
     const plane = [];
     for (let y = 0; y < straightTile.height; y++) {
-      plane.push(new Array(straightTile.size).fill(fill));
+      plane.push(new Array(straightTile.size).fill(AIR));
     }
     blocks.push(plane);
   }
@@ -299,7 +277,7 @@ export class TileSet {
     const entries = this.variants[name];
     if (!(style in entries)) style = DEFAULT_STYLE;
     rotation = ((rotation % 4) + 4) % 4;
-    const key = `${name} ${style} ${rotation}`;
+    const key = `${name}\0${style}\0${rotation}`;
     if (!this._cache.has(key)) {
       if (rotation === 0) {
         this._cache.set(key, entries[style][0]);

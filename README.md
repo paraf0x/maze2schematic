@@ -87,6 +87,9 @@ Further options: `--name`, `--author` for the schematic metadata, and
 - `--h-mirror` / `--v-mirror`: mirror symmetry (solvability not guaranteed)
 - `--no-h-border` / `--no-v-border`: without an outer wall
 - `--no-entrances`: don't punch an entrance/exit into the top/bottom border
+- `--no-closed`: leave closed cells empty (air) instead of placing the
+  closed tile; also the automatic behavior when the tile set has no closed
+  tile (in the web app: disable the closed tile in the tile manager)
 - `--dungeon NAME`: parameter presets from the jsmaze website
   (labyrinth, catacombs, hedge, palace, fortress, suburb, city, pacman,
   starship, garden, forbidden); individual options override the preset

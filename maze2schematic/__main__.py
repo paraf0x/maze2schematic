@@ -64,6 +64,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=None, help="Seed for the generator and variant selection (reproducible)")
     parser.add_argument("--preview", action="store_true", help="Print an ASCII preview only, don't write a schematic")
     parser.add_argument(
+        "--no-closed",
+        action="store_true",
+        help="Leave closed cells empty (air) instead of placing the closed tile",
+    )
+    parser.add_argument(
         "--map-template",
         metavar="FILE",
         help="Write an empty bias-map template sized to the maze and exit",
@@ -162,7 +167,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"Style distribution ({maze.rows * maze.cols} cells): {parts}")
 
-    schem = assemble(maze, tileset, name=args.name, author=args.author, rng=rng, styles=styles)
+    schem = assemble(
+        maze, tileset, name=args.name, author=args.author, rng=rng, styles=styles,
+        skip_closed=args.no_closed,
+    )
     schem.save(args.out)
 
     ts = tileset.size
