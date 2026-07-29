@@ -275,7 +275,7 @@ export function drawTileThumb(canvas, region, arrows) {
  * block is found from the top (y = sizeY-1 downward) and its color is
  * drawn as a rectangle. Columns that are all air stay on the background
  * (`TOPDOWN_BG`). */
-export function drawTopdown(canvas, assembly) {
+export function drawTopdown(canvas, assembly, opts = {}) {
   const { ctx, cssWidth, cssHeight } = _syncCanvas(canvas);
   ctx.fillStyle = TOPDOWN_BG;
   ctx.fillRect(0, 0, cssWidth, cssHeight);
@@ -285,10 +285,14 @@ export function drawTopdown(canvas, assembly) {
   const px = Math.floor(Math.min(cssWidth / sizeX, cssHeight / sizeZ));
   if (px <= 0) return;
 
+  // Cutaway: ignore all layers above maxY (e.g. tunnel ceilings), so the
+  // scan reveals the interior instead of the roof.
+  const topY = Math.min(sizeY - 1, opts.maxY ?? sizeY - 1);
+
   for (let x = 0; x < sizeX; x++) {
     for (let z = 0; z < sizeZ; z++) {
       let color = null;
-      for (let y = sizeY - 1; y >= 0; y--) {
+      for (let y = topY; y >= 0; y--) {
         const idx = blocks[(y * sizeZ + z) * sizeX + x];
         const state = palette[idx];
         if (state && state.id !== "minecraft:air") {

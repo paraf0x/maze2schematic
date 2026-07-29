@@ -243,3 +243,20 @@ test("renderTileImage: returns null in a non-browser environment (no `document`)
   const assembly = assemblyFromRegion(region);
   assert.equal(renderTileImage(assembly, 96), null);
 });
+
+test("buildGeometryData cutaway: maxY hides the top layer and caps the cut", () => {
+  // 1x2x1 column of stone: full render = one 1x2x1 box (6 faces merged as
+  // 10 faces? no -- two stacked cubes share one culled face pair: 10 faces).
+  const stone = { id: "minecraft:stone", props: {} };
+  const assembly = {
+    sizeX: 1, sizeY: 2, sizeZ: 1,
+    palette: [{ id: "minecraft:air", props: {} }, stone],
+    blocks: new Uint32Array([1, 1]),
+  };
+  const full = buildGeometryData(assembly);
+  assert.equal(full.positions.length / 3 / 4, 10); // 10 faces
+  // Cutaway at maxY=0: only the bottom cube remains -- 6 faces, including
+  // a new top face at the cut plane.
+  const cut = buildGeometryData(assembly, { maxY: 0 });
+  assert.equal(cut.positions.length / 3 / 4, 6);
+});

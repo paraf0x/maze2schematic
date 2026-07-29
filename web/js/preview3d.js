@@ -91,7 +91,7 @@ function _hueToRgb(p, q, t) {
  * artifacts, far fewer triangles than one cube per block). Returns flat
  * TypedArrays, directly suitable for `BufferGeometry.setAttribute`/
  * `setIndex`; contains no THREE object. */
-export function buildGeometryData(assembly) {
+export function buildGeometryData(assembly, opts = {}) {
   const empty = () => ({
     positions: new Float32Array(0),
     normals: new Float32Array(0),
@@ -103,9 +103,13 @@ export function buildGeometryData(assembly) {
   const { sizeX, sizeY, sizeZ, palette, blocks } = assembly;
   if (!(sizeX > 0) || !(sizeY > 0) || !(sizeZ > 0)) return empty();
 
+  // Cutaway: everything above maxY counts as air -- blocks up there emit no
+  // faces, and the cut plane caps the remaining walls with top faces.
+  const maxY = Math.min(sizeY - 1, opts.maxY ?? sizeY - 1);
+
   const blockIndex = (x, y, z) => (y * sizeZ + z) * sizeX + x;
   const isAir = (x, y, z) => {
-    if (x < 0 || y < 0 || z < 0 || x >= sizeX || y >= sizeY || z >= sizeZ) return true;
+    if (x < 0 || y < 0 || z < 0 || x >= sizeX || y > maxY || y >= sizeY || z >= sizeZ) return true;
     const idx = blocks[blockIndex(x, y, z)];
     const state = palette[idx];
     return !state || state.id === "minecraft:air";
@@ -118,7 +122,7 @@ export function buildGeometryData(assembly) {
   let vertCount = 0;
   const colorCache = new Map();
 
-  for (let y = 0; y < sizeY; y++) {
+  for (let y = 0; y <= maxY; y++) {
     for (let z = 0; z < sizeZ; z++) {
       for (let x = 0; x < sizeX; x++) {
         const idx = blocks[blockIndex(x, y, z)];
@@ -252,7 +256,9 @@ export function renderTileImage(assembly, sizePx, arrows) {
 
     renderer.setSize(sizePx, sizePx, false);
 
-    const data = buildGeometryData(assembly);
+    // Thumbnails render cutaway (top layer hidden) so enclosed tunnel
+    // tiles show their interior instead of a closed box.
+    const data = buildGeometryData(assembly, { maxY: assembly.sizeY - 2 });
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
     geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
@@ -442,17 +448,17 @@ function _resize() {
  * Can be called before `initScene` has ever run (e.g. if the 3D tab has
  * never been active) -- in that case it just remembers the assembly and
  * builds it on the next `initScene`/`setActive(true)`. */
-export function updateScene(assembly) {
+export function updateScene(assembly, opts = {}) {
   if (!_sceneState) {
-    _pendingAssemblyBeforeInit = assembly;
+    _pendingAssemblyBeforeInit = { assembly, opts };
     return;
   }
-  _applyAssembly(assembly);
+  _applyAssembly(assembly, opts);
 }
 
 let _pendingAssemblyBeforeInit = undefined;
 
-function _applyAssembly(assembly) {
+function _applyAssembly(assembly, opts = {}) {
   const state = _sceneState;
   if (!state) return;
 
@@ -473,7 +479,7 @@ function _applyAssembly(assembly) {
     return;
   }
 
-  const data = buildGeometryData(assembly);
+  const data = buildGeometryData(assembly, opts);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
   geometry.setAttribute("normal", new THREE.BufferAttribute(data.normals, 3));
@@ -532,7 +538,7 @@ export function setActive(container, active) {
   if (active && !_sceneState) {
     initScene(container);
     if (_pendingAssemblyBeforeInit !== undefined) {
-      _applyAssembly(_pendingAssemblyBeforeInit);
+      _applyAssembly(_pendingAssemblyBeforeInit.assembly, _pendingAssemblyBeforeInit.opts);
       _pendingAssemblyBeforeInit = undefined;
     }
   }

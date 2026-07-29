@@ -129,6 +129,7 @@ function init() {
     tileReset: document.getElementById("tile-reset"),
     downloadBtn: document.getElementById("download-btn"),
     messages: document.getElementById("messages"),
+    cutaway: document.getElementById("cutaway"),
     tabMaze: document.getElementById("tab-maze"),
     tabTopdown: document.getElementById("tab-topdown"),
     tab3d: document.getElementById("tab-3d"),
@@ -288,9 +289,24 @@ function init() {
   document.addEventListener("maze-changed", (ev) => {
     drawMaze(els.mazeCanvas, ev.detail.maze);
   });
+
+  /** Cutaway (default on): hide the top layer -- tunnel-style tile sets
+   * are fully roofed, so without the cut the Top-Down and 3D views show
+   * nothing but a solid slab of ceiling. */
+  function previewOpts() {
+    if (!els.cutaway.checked || !state.assembly) return {};
+    return { maxY: state.assembly.sizeY - 2 };
+  }
+
   document.addEventListener("assembly-changed", (ev) => {
-    drawTopdown(els.topdownCanvas, ev.detail.assembly);
-    updateScene(ev.detail.assembly);
+    drawTopdown(els.topdownCanvas, ev.detail.assembly, previewOpts());
+    updateScene(ev.detail.assembly, previewOpts());
+  });
+
+  els.cutaway.addEventListener("change", () => {
+    if (!state.assembly) return;
+    drawTopdown(els.topdownCanvas, state.assembly, previewOpts());
+    updateScene(state.assembly, previewOpts());
   });
 
   // ---------------------------------------------------------------------
@@ -344,7 +360,7 @@ function init() {
     if (which === "maze" && state.maze) {
       drawMaze(els.mazeCanvas, state.maze);
     } else if (which === "topdown" && state.assembly) {
-      drawTopdown(els.topdownCanvas, state.assembly);
+      drawTopdown(els.topdownCanvas, state.assembly, previewOpts());
     }
     // Only run the 3D render loop while the tab is visible (task 12):
     // pauses requestAnimationFrame when switching away from 3D, initializes
@@ -366,7 +382,7 @@ function init() {
     if (currentTab === "maze" && state.maze) {
       drawMaze(els.mazeCanvas, state.maze);
     } else if (currentTab === "topdown" && state.assembly) {
-      drawTopdown(els.topdownCanvas, state.assembly);
+      drawTopdown(els.topdownCanvas, state.assembly, previewOpts());
     }
   });
 
