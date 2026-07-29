@@ -95,13 +95,21 @@
 
     <section class="group">
       <h2>Tile Set</h2>
+      <label class="field">
+        <span>Theme</span>
+        <select id="theme-select"></select>
+      </label>
+      <div class="theme-actions">
+        <button id="theme-save" type="button">Save as theme…</button>
+        <button id="theme-delete" type="button" disabled>Delete</button>
+      </div>
       <div id="tile-drop">Drop your own <code>.litematic</code> tiles here</div>
       <label id="tile-add">
         Add tiles…
         <input id="tile-file-input" type="file" multiple accept=".litematic">
       </label>
       <div id="tile-manager"></div>
-      <button id="tile-reset" type="button">Restore presets</button>
+      <button id="tile-reset" type="button">Reset theme</button>
     </section>
 
     <button id="download-btn" type="button" class="primary">Download .litematic</button>

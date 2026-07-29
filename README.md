@@ -11,18 +11,22 @@ license).
 A static port runs entirely in the browser at
 `https://paraf0x.github.io/maze2schematic/`: the generator, tile assembly,
 and export all run client-side as JavaScript, no server required (other
-than to serve the static files). Presets, 2D/3D preview, and the
-Litematica export (`.litematic`, gzip-compressed) work without Python or
-any installation.
+than to serve the static files). Themes (named tile sets), 2D/3D preview,
+and the Litematica export (`.litematic`, gzip-compressed) work without
+Python or any installation. Built-in themes ship as static assets; users
+can also save their own tile sets as themes, persisted in the browser's
+`localStorage`. Switching a theme only restyles the current maze -- the
+layout/seed stay untouched.
 
-The web presets under `web/presets/` are a copy of `presets/`; after
-changes to `presets/` (new tiles, `variants.json`), rerun
+The built-in themes under `web/themes/` are generated from `presets/`,
+`tiles_fallout/`, and `tiles_vault/`; after changes to those directories
+(new tiles, `variants.json`), rerun
 
 ```bash
-.venv/bin/python scripts/make_web_presets.py
+.venv/bin/python scripts/make_web_themes.py
 ```
 
-to update `web/presets/` and its `index.json`.
+to regenerate `web/themes/` and its `index.json`.
 
 Run locally (from the repo root, so both the root `index.html` and
 `web/` are reachable):

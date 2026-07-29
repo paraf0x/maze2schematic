@@ -141,6 +141,15 @@ button.primary {
   font-weight: 600;
 }
 
+.theme-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.theme-actions button {
+  flex: 1 1 auto;
+}
+
 #tile-drop {
   border: 2px dashed var(--border);
   border-radius: 6px;

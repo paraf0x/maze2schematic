@@ -1,0 +1,50 @@
+{
+  "themes": [
+    {
+      "id": "classic",
+      "label": "Classic stone",
+      "dir": "classic",
+      "files": [
+        "closed.litematic",
+        "closed_slim.litematic",
+        "deadend.litematic",
+        "deadend_slim.litematic",
+        "straight.litematic",
+        "straight_slim.litematic",
+        "tcross.litematic",
+        "tcross_slim.litematic",
+        "turn.litematic",
+        "turn_slim.litematic",
+        "xcross.litematic",
+        "xcross_slim.litematic"
+      ],
+      "variants": "variants.json"
+    },
+    {
+      "id": "fallout-metro",
+      "label": "Fallout metro",
+      "dir": "fallout-metro",
+      "files": [
+        "closed.litematic",
+        "cross.litematic",
+        "dead_end.litematic",
+        "straight.litematic",
+        "tee.litematic",
+        "turn.litematic"
+      ]
+    },
+    {
+      "id": "vault-tube",
+      "label": "Vault tube",
+      "dir": "vault-tube",
+      "files": [
+        "closed.litematic",
+        "cross.litematic",
+        "dead_end.litematic",
+        "straight.litematic",
+        "tee.litematic",
+        "turn.litematic"
+      ]
+    }
+  ]
+}

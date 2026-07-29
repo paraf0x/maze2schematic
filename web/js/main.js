@@ -1,6 +1,13 @@
 // UI wiring, state, re-render triggers. Port-independent: holds no porting
-// logic itself, just calls the core modules (tasks 1-8) and the preset
-// assets (task 9).
+// logic itself, just calls the core modules (tasks 1-8) and the theme
+// assets (task 9, extended: themes).
+//
+// Themes: a THEME is a named tile set (tiles + weights + disabled flags +
+// clusters). Built-in themes ship as static assets under web/themes/ (see
+// scripts/make_web_themes.py); user themes are saved in localStorage
+// (serialized via ./themes.js). Switching the active theme rebuilds the
+// tile set/assembly only -- it never touches state.maze, so restyling a
+// maze via the theme dropdown is instant and keeps the current layout.
 //
 // Task 12 (`preview3d.js`): the WebGL renderer is created lazily the first
 // time the 3D tab is activated (`setActive`), so no WebGL context exists
@@ -22,6 +29,7 @@ import { parseVariantsConfig } from "./variants.js";
 import { assembleBlocks } from "./assemble.js";
 import { parseLitematic, writeLitematic } from "./litematic.js";
 import { gzip, gunzip, supportsCompression, downloadBlob } from "./export.js";
+import { serializeTheme, deserializeTheme } from "./themes.js";
 import { drawMaze, drawTopdown, drawTileThumb } from "./preview2d.js";
 import {
   updateScene,
@@ -37,6 +45,10 @@ const WEIGHT_MIN = 0.5;
 const WEIGHT_MAX = 10;
 const THUMB_SIZE = 48;
 const THUMB_RENDER_SIZE = 96; // backing resolution for the 3D thumbnail, 2x THUMB_SIZE for sharpness
+
+const LS_ACTIVE_THEME_KEY = "maze2schematic.activeTheme";
+const LS_USER_THEMES_KEY = "maze2schematic.userThemes";
+const FALLBACK_THEME_ID = "classic";
 
 // Short orientation hint per canonical tile type, shown in the tile import
 // modal under the type <select> once a type is chosen.
@@ -108,6 +120,9 @@ function init() {
     entrances: document.getElementById("entrances"),
     schematicName: document.getElementById("schematic-name"),
     author: document.getElementById("author"),
+    themeSelect: document.getElementById("theme-select"),
+    themeSave: document.getElementById("theme-save"),
+    themeDelete: document.getElementById("theme-delete"),
     tileDrop: document.getElementById("tile-drop"),
     tileFileInput: document.getElementById("tile-file-input"),
     tileManager: document.getElementById("tile-manager"),
@@ -126,18 +141,26 @@ function init() {
     maze: null,
     tileset: null,
     // Unified tile pool: stem (filename without ".litematic") -> {filename,
-    // doc, source}. Presets and user-added files live in the same pool;
-    // adding a file with an existing stem overrides it. `source` is
-    // "preset" or "user", used only to render the "user" badge.
+    // doc, bytes, source}. `bytes` are the tile's uncompressed NBT bytes
+    // (needed to serialize the pool into a user theme, see ./themes.js).
+    // Built-in and user-added files live in the same pool; adding a file
+    // with an existing stem overrides it. `source` is "preset" or "user",
+    // used only to render the "user" badge.
     pool: new Map(),
     disabled: new Set(), // stems
     weights: {}, // stem -> number (unlisted stems default to 1 at rebuild)
-    clusters: {}, // parsed clusters config from the presets, kept as-is
-    // Snapshot of the presets alone (pool/weights/clusters), used by the
-    // "Restore presets" button. Set once loadPresets() succeeds.
-    presets: null,
+    clusters: {}, // parsed clusters config from the active theme, kept as-is
     assembly: null,
     options: defaultOptions(),
+
+    // ---- Themes -----------------------------------------------------
+    themes: [], // built-in theme metas from themes/index.json: {id, label, dir, files, variants?}
+    userThemes: new Map(), // id -> deserialized theme {id, label, tiles:[{filename,bytes}], weights, disabled, clusters}
+    builtinThemeCache: new Map(), // built-in theme id -> loaded {pool, weights, disabled, clusters} (avoids refetching on every switch)
+    activeTheme: null, // id of the currently active theme (built-in or user), or null if none could be loaded
+    // Whether the tile manager has been edited since the active theme was
+    // selected/saved/reset -- shown as " •" appended to its <option> label.
+    themeModified: false,
   };
   window.appState = state;
 
@@ -394,7 +417,9 @@ function init() {
     mutate();
     const ok = rebuildTileset();
     if (ok) {
+      state.themeModified = true;
       renderTileManager();
+      populateThemeSelect();
       render();
     } else {
       state.pool = snapshot.pool;
@@ -558,15 +583,20 @@ function init() {
     rotateBtn.addEventListener("click", () => {
       const current = state.pool.get(stem);
       if (!current) return;
-      let rotated;
+      let rotated, bytes;
       try {
         rotated = rotateDoc(current.doc);
+        // Recompute the tile's uncompressed NBT bytes from the rotated
+        // region, so a subsequent "Save as theme…" persists the rotation
+        // (state.pool.bytes must always match state.pool.doc).
+        const assembly = assemblyFromRegion(rotated.regions[0]);
+        bytes = writeLitematic({ ...assembly, name: stem, author: "maze2schematic-web", timestamp: Date.now() });
       } catch (err) {
         addMessage(`${stem}: rotate failed: ${err.message}`, "error");
         return;
       }
       applyPoolChange(() => {
-        state.pool.set(stem, { ...current, doc: rotated });
+        state.pool.set(stem, { ...current, doc: rotated, bytes });
       });
     });
     row.appendChild(rotateBtn);
@@ -625,7 +655,7 @@ function init() {
     list.className = "tile-import-list";
     card.appendChild(list);
 
-    const rows = parsedFiles.map(({ stem, filename, doc }) => {
+    const rows = parsedFiles.map(({ stem, filename, doc, bytes }) => {
       const canonical = typeForStem(stem);
       const variantGuess = canonical ? sanitizeVariant(styleOf(stem, aliasForStem(stem, canonical))) : "";
 
@@ -684,7 +714,7 @@ function init() {
         updateImportButton();
       });
 
-      return { filename, doc, select, variantInput };
+      return { filename, doc, bytes, select, variantInput };
     });
 
     const actions = document.createElement("div");
@@ -709,16 +739,18 @@ function init() {
     updateImportButton();
 
     importBtn.addEventListener("click", () => {
-      const entries = rows.map(({ doc, select, variantInput }) => {
+      const entries = rows.map(({ doc, bytes, select, variantInput }) => {
         const canonical = select.value;
         const variant = sanitizeVariant(variantInput.value.trim());
         const stem = variant ? `${canonical}_${variant}` : canonical;
-        return { stem, filename: `${stem}.litematic`, doc };
+        // Bytes stay as-is (renaming only changes filename/stem, not the
+        // tile's content), see the header comment on `state.pool`.
+        return { stem, filename: `${stem}.litematic`, doc, bytes };
       });
       overlay.remove();
       const ok = applyPoolChange(() => {
-        for (const { stem, filename, doc } of entries) {
-          state.pool.set(stem, { filename, doc, source: "user" });
+        for (const { stem, filename, doc, bytes } of entries) {
+          state.pool.set(stem, { filename, doc, bytes, source: "user" });
         }
       });
       if (ok) {
@@ -748,10 +780,11 @@ function init() {
 
     const parsed = [];
     for (const file of files) {
-      let doc;
+      let doc, bytes;
       try {
         const raw = new Uint8Array(await file.arrayBuffer());
-        doc = parseLitematic(await gunzip(raw));
+        bytes = await gunzip(raw); // uncompressed NBT bytes, kept for theme serialization
+        doc = parseLitematic(bytes);
       } catch (err) {
         addMessage(`${file.name}: ${err.message}`, "error");
         continue;
@@ -760,7 +793,7 @@ function init() {
         addMessage(`${file.name}: ${warning}`, "warning");
       }
       const stem = file.name.replace(/\.litematic$/i, "");
-      parsed.push({ stem, filename: file.name, doc });
+      parsed.push({ stem, filename: file.name, doc, bytes });
     }
 
     if (parsed.length === 0) return;
@@ -786,80 +819,343 @@ function init() {
     els.tileFileInput.value = ""; // allow re-adding the same file(s) later
   });
 
-  els.tileReset.addEventListener("click", () => {
-    if (!state.presets) {
-      addMessage("No presets available.", "warning");
+  els.tileReset.addEventListener("click", async () => {
+    if (state.activeTheme === null) {
+      addMessage("No theme available.", "warning");
       return;
     }
-    state.pool = new Map(state.presets.pool);
-    state.disabled.clear();
-    state.weights = { ...state.presets.weights };
-    state.clusters = state.presets.clusters;
-    if (rebuildTileset()) {
-      addMessage("Presets restored.", "info");
+    if (await selectTheme(state.activeTheme)) {
+      addMessage("Theme reset.", "info");
     }
-    renderTileManager();
-    render();
   });
 
   // ---------------------------------------------------------------------
-  // Load presets (task 9: web/presets/index.json)
+  // Themes (task 9, extended): named tile sets. Built-in themes ship as
+  // static assets under web/themes/ (manifest at web/themes/index.json,
+  // see scripts/make_web_themes.py); user themes are saved in localStorage
+  // via ./themes.js's serializeTheme/deserializeTheme. Switching the active
+  // theme only rebuilds the pool/tileset/assembly -- state.maze (and its
+  // seed) is left untouched, so restyling a maze via the dropdown is
+  // instant and never regenerates the layout.
   // ---------------------------------------------------------------------
 
-  async function loadPresets() {
-    let manifest;
+  function hasLocalStorage() {
     try {
-      const res = await fetch("presets/index.json");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      manifest = await res.json();
+      return typeof localStorage !== "undefined" && localStorage !== null;
     } catch {
+      return false; // some private-mode browsers throw on access, not just on read/write
+    }
+  }
+
+  function persistActiveTheme(id) {
+    if (!hasLocalStorage()) return;
+    try {
+      localStorage.setItem(LS_ACTIVE_THEME_KEY, id);
+    } catch {
+      addMessage("Could not save theme (storage unavailable or full).", "warning");
+    }
+  }
+
+  /** Writes state.userThemes to localStorage. Returns whether it succeeded;
+   * callers should abort the save/delete flow (without mutating
+   * state.activeTheme etc.) when this returns false, since state.userThemes
+   * would otherwise disagree with what's actually persisted. */
+  function persistUserThemes() {
+    if (!hasLocalStorage()) {
+      addMessage("Could not save theme (storage unavailable or full).", "warning");
+      return false;
+    }
+    try {
+      const serialized = [...state.userThemes.values()].map((theme) => serializeTheme(theme));
+      localStorage.setItem(LS_USER_THEMES_KEY, JSON.stringify(serialized));
+      return true;
+    } catch {
+      addMessage("Could not save theme (storage unavailable or full).", "warning");
+      return false;
+    }
+  }
+
+  /** Reads + deserializes state.userThemes from localStorage. A theme that
+   * fails to deserialize (corrupted JSON/base64/structure) is skipped with
+   * a message rather than aborting startup entirely. */
+  function loadUserThemesFromStorage() {
+    state.userThemes = new Map();
+    if (!hasLocalStorage()) return;
+    let raw;
+    try {
+      raw = localStorage.getItem(LS_USER_THEMES_KEY);
+    } catch {
+      return;
+    }
+    if (!raw) return;
+    let list;
+    try {
+      list = JSON.parse(raw);
+    } catch {
+      addMessage("Stored themes could not be read (corrupted data) and were skipped.", "warning");
+      return;
+    }
+    if (!Array.isArray(list)) return;
+    for (const item of list) {
+      try {
+        const theme = deserializeTheme(item);
+        state.userThemes.set(theme.id, theme);
+      } catch (err) {
+        addMessage(`A stored theme could not be loaded and was skipped: ${err.message}`, "warning");
+      }
+    }
+  }
+
+  function readStoredActiveTheme() {
+    if (!hasLocalStorage()) return null;
+    try {
+      return localStorage.getItem(LS_ACTIVE_THEME_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Lowercase `[a-z0-9-]+` slug used as a user theme's id, derived from its
+   * display name -- so re-saving under the same (or differently-cased/
+   * punctuated) name overwrites the existing entry, per spec. */
+  function slugifyThemeName(label) {
+    return label.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "theme";
+  }
+
+  /** Fetches + parses one built-in theme's tile files + variants config
+   * into a fresh {pool, weights, disabled, clusters} snapshot. */
+  async function fetchBuiltinTheme(meta) {
+    const entries = await Promise.all(
+      meta.files.map(async (relPath) => {
+        const res = await fetch(`themes/${meta.dir}/${relPath}`);
+        if (!res.ok) throw new Error(`${relPath}: HTTP ${res.status}`);
+        const raw = new Uint8Array(await res.arrayBuffer());
+        const bytes = await gunzip(raw); // uncompressed NBT bytes, kept for theme serialization
+        const doc = parseLitematic(bytes);
+        for (const warning of doc.warnings) {
+          addMessage(`${relPath}: ${warning}`, "warning");
+        }
+        return { filename: relPath.split("/").pop(), doc, bytes };
+      }),
+    );
+
+    let config = { weights: {}, clusters: {} };
+    if (meta.variants) {
+      const vres = await fetch(`themes/${meta.dir}/${meta.variants}`);
+      if (vres.ok) {
+        config = parseVariantsConfig(await vres.json());
+      }
+    }
+
+    const pool = new Map();
+    for (const { filename, doc, bytes } of entries) {
+      const stem = filename.replace(/\.litematic$/i, "");
+      pool.set(stem, { filename, doc, bytes, source: "preset" });
+    }
+    return { pool, weights: { ...config.weights }, disabled: new Set(), clusters: config.clusters };
+  }
+
+  /** Builds a {pool, weights, disabled, clusters} snapshot from an
+   * already-deserialized user theme (no network access -- tile bytes are
+   * already in memory, see ./themes.js). Tiles loaded this way are marked
+   * `source: "user"` regardless of their original origin: once saved into
+   * a user theme, they're user data, not the built-in asset anymore. */
+  function poolFromUserTheme(theme) {
+    const pool = new Map();
+    for (const { filename, bytes } of theme.tiles) {
+      const stem = filename.replace(/\.litematic$/i, "");
+      let doc;
+      try {
+        doc = parseLitematic(bytes);
+      } catch (err) {
+        throw new Error(`${filename}: ${err.message}`);
+      }
+      pool.set(stem, { filename, doc, bytes, source: "user" });
+    }
+    return {
+      pool,
+      weights: { ...theme.weights },
+      disabled: new Set(theme.disabled),
+      clusters: theme.clusters,
+    };
+  }
+
+  /** Loads (or returns a cached/in-memory copy of) the {pool, weights,
+   * disabled, clusters} snapshot for theme `id` -- a user theme (from
+   * state.userThemes, no I/O) or a built-in theme (fetched once, then
+   * cached in state.builtinThemeCache so switching back to a
+   * previously-loaded built-in theme, or resetting it, doesn't refetch).
+   * Always returns a fresh copy (new Map/Set) so callers can freely mutate
+   * state.pool/weights/disabled without corrupting the cache. */
+  async function loadThemeSnapshot(id) {
+    const userTheme = state.userThemes.get(id);
+    if (userTheme) return poolFromUserTheme(userTheme);
+
+    const meta = state.themes.find((t) => t.id === id);
+    if (!meta) throw new Error(`Unknown theme '${id}'.`);
+
+    if (!state.builtinThemeCache.has(id)) {
+      state.builtinThemeCache.set(id, await fetchBuiltinTheme(meta));
+    }
+    const cached = state.builtinThemeCache.get(id);
+    return {
+      pool: new Map(cached.pool),
+      weights: { ...cached.weights },
+      disabled: new Set(cached.disabled),
+      clusters: cached.clusters,
+    };
+  }
+
+  /** Activates theme `id`: loads its snapshot into state.pool/weights/
+   * disabled/clusters, rebuilds the tile set, and re-renders the tile
+   * manager + triggers a maze/assembly re-render (state.maze itself is
+   * never touched -- see the header comment on this section). Persists the
+   * choice to localStorage on success. Returns whether it succeeded; on
+   * failure state.activeTheme is left unchanged and an error message is
+   * shown (the caller is responsible for reverting any UI control, e.g.
+   * the <select>'s value, that already reflects the failed attempt). */
+  async function selectTheme(id) {
+    let snapshot;
+    try {
+      snapshot = await loadThemeSnapshot(id);
+    } catch (err) {
+      addMessage(`Theme '${id}' could not be loaded: ${err.message}`, "error");
+      return false;
+    }
+
+    state.activeTheme = id;
+    state.pool = snapshot.pool;
+    state.weights = snapshot.weights;
+    state.disabled = snapshot.disabled;
+    state.clusters = snapshot.clusters;
+    state.themeModified = false;
+
+    rebuildTileset();
+    renderTileManager();
+    populateThemeSelect();
+    render();
+    persistActiveTheme(id);
+    return true;
+  }
+
+  /** Rebuilds the #theme-select <option>s from state.themes + userThemes,
+   * appends " •" to the active theme's label if state.themeModified, and
+   * enables #theme-delete only for a user theme. */
+  function populateThemeSelect() {
+    els.themeSelect.innerHTML = "";
+    for (const meta of state.themes) {
+      const opt = document.createElement("option");
+      opt.value = meta.id;
+      opt.textContent = meta.label + (meta.id === state.activeTheme && state.themeModified ? " •" : "");
+      els.themeSelect.appendChild(opt);
+    }
+    for (const theme of state.userThemes.values()) {
+      const opt = document.createElement("option");
+      opt.value = theme.id;
+      opt.textContent =
+        `${theme.label} (custom)` + (theme.id === state.activeTheme && state.themeModified ? " •" : "");
+      els.themeSelect.appendChild(opt);
+    }
+    if (state.activeTheme !== null) els.themeSelect.value = state.activeTheme;
+    els.themeDelete.disabled = !state.userThemes.has(state.activeTheme);
+  }
+
+  els.themeSelect.addEventListener("change", async () => {
+    const id = els.themeSelect.value;
+    if (id === state.activeTheme) return;
+    if (!(await selectTheme(id))) {
+      populateThemeSelect(); // revert the <select>'s value to the still-active theme
+    }
+  });
+
+  els.themeSave.addEventListener("click", () => {
+    const raw = window.prompt("Save the current tile set as a theme -- name:", "");
+    if (raw === null) return; // cancelled
+    const label = raw.trim();
+    if (!label) {
+      addMessage("Theme name cannot be empty.", "warning");
+      return;
+    }
+    const id = slugifyThemeName(label);
+    if (state.themes.some((t) => t.id === id)) {
+      addMessage(`"${label}" conflicts with a built-in theme name -- choose a different name.`, "error");
+      return;
+    }
+
+    const overwriting = state.userThemes.has(id);
+    const theme = {
+      id,
+      label,
+      tiles: [...state.pool.values()].map(({ filename, bytes }) => ({ filename, bytes })),
+      weights: { ...state.weights },
+      disabled: [...state.disabled],
+      clusters: state.clusters,
+    };
+    const previousThemes = new Map(state.userThemes);
+    state.userThemes.set(id, theme);
+    if (!persistUserThemes()) {
+      state.userThemes = previousThemes; // revert -- nothing was actually saved
+      return;
+    }
+
+    state.activeTheme = id;
+    state.themeModified = false;
+    persistActiveTheme(id);
+    populateThemeSelect();
+    addMessage(overwriting ? `Theme "${label}" updated.` : `Theme "${label}" saved.`, "info");
+  });
+
+  els.themeDelete.addEventListener("click", () => {
+    const theme = state.userThemes.get(state.activeTheme);
+    if (!theme) return; // button is disabled in this case, but guard anyway
+    if (!window.confirm(`Delete theme "${theme.label}"? This cannot be undone.`)) return;
+
+    const previousThemes = new Map(state.userThemes);
+    state.userThemes.delete(theme.id);
+    if (!persistUserThemes()) {
+      state.userThemes = previousThemes;
+      return;
+    }
+    addMessage(`Theme "${theme.label}" deleted.`, "info");
+    selectTheme(state.themes.some((t) => t.id === FALLBACK_THEME_ID) ? FALLBACK_THEME_ID : state.themes[0]?.id ?? null);
+  });
+
+  /** Loads the built-in theme manifest + restores user themes/the last
+   * active theme from localStorage, then activates a theme. Never throws:
+   * a manifest fetch failure (e.g. `file://`) leaves state.themes empty and
+   * only shows a warning -- drag & drop still works, and a stored user
+   * theme (no network needed) can still become active. */
+  async function loadThemes() {
+    loadUserThemesFromStorage();
+
+    try {
+      const res = await fetch("themes/index.json");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const manifest = await res.json();
+      state.themes = manifest.themes ?? [];
+    } catch {
+      state.themes = [];
       addMessage(
-        "Presets could not be loaded (requires an HTTP(S) server, e.g. " +
+        "Themes could not be loaded (requires an HTTP(S) server, e.g. " +
           "`python3 -m http.server` -- opening via file:// doesn't work). " +
           "Adding your own tiles (drag & drop or the Add tiles button) still works.",
         "warning",
       );
-      return;
     }
 
-    try {
-      const entries = await Promise.all(
-        manifest.files.map(async (relPath) => {
-          const res = await fetch(`presets/${relPath}`);
-          if (!res.ok) throw new Error(`${relPath}: HTTP ${res.status}`);
-          const raw = new Uint8Array(await res.arrayBuffer());
-          const doc = parseLitematic(await gunzip(raw));
-          for (const warning of doc.warnings) {
-            addMessage(`${relPath}: ${warning}`, "warning");
-          }
-          return { filename: relPath.split("/").pop(), doc };
-        }),
-      );
+    const stored = readStoredActiveTheme();
+    const knownIds = new Set([...state.themes.map((t) => t.id), ...state.userThemes.keys()]);
+    const fallback = state.themes.some((t) => t.id === FALLBACK_THEME_ID)
+      ? FALLBACK_THEME_ID
+      : (state.themes[0]?.id ?? [...state.userThemes.keys()][0] ?? null);
+    const initial = stored && knownIds.has(stored) ? stored : fallback;
 
-      let config = { weights: {}, clusters: {} };
-      if (manifest.variants) {
-        const vres = await fetch(`presets/${manifest.variants}`);
-        if (vres.ok) {
-          config = parseVariantsConfig(await vres.json());
-        }
-      }
-
-      const pool = new Map();
-      for (const { filename, doc } of entries) {
-        const stem = filename.replace(/\.litematic$/i, "");
-        pool.set(stem, { filename, doc, source: "preset" });
-      }
-
-      state.pool = pool;
-      state.weights = { ...config.weights };
-      state.clusters = config.clusters;
-      state.presets = { pool: new Map(pool), weights: { ...config.weights }, clusters: config.clusters };
-
-      rebuildTileset();
-      renderTileManager();
-      render();
-    } catch (err) {
-      addMessage(`Presets could not be loaded: ${err.message}`, "error");
+    state.activeTheme = initial;
+    populateThemeSelect();
+    if (initial !== null) {
+      await selectTheme(initial);
+    } else {
+      renderTileManager(); // nothing to load -- still show the (empty) tile manager
     }
   }
 
@@ -897,7 +1193,7 @@ function init() {
 
   renderTileManager();
   render();
-  loadPresets();
+  loadThemes();
 }
 
 if (typeof document !== "undefined") {
